@@ -1,5 +1,3 @@
-use std::{convert::Infallible, num::TryFromIntError};
-
 #[derive(Debug)]
 pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
     pub registers: [T; NR_REGS],
@@ -7,12 +5,16 @@ pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
 }
 
 pub trait SyscallRegister {
+    const BITS: usize;
+    type Ty;
     fn zero() -> Self;
 }
 
 impl SyscallRegister for u64 {
+    const BITS: usize = 64;
+    type Ty = Self;
     fn zero() -> Self {
-        Self::default()
+        0
     }
 }
 
@@ -28,20 +30,7 @@ pub trait SyscallArguments<const BITS: usize, const NR_REGS: usize> {
 
 #[derive(Debug)]
 pub enum DecodeError {
-    Infallible,
-    TryFromIntError(core::num::TryFromIntError),
-}
-
-impl From<TryFromIntError> for DecodeError {
-    fn from(value: TryFromIntError) -> Self {
-        Self::TryFromIntError(value)
-    }
-}
-
-impl From<Infallible> for DecodeError {
-    fn from(_: Infallible) -> Self {
-        Self::Infallible
-    }
+    InvalidData,
 }
 
 #[derive(Debug)]
@@ -77,6 +66,14 @@ impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallEncoder
             extra_data: None,
         }
     }
+
+    pub const fn bits(&self) -> usize {
+        BITS
+    }
+
+    pub const fn nr_regs(&self) -> usize {
+        NR_REGS
+    }
 }
 
 pub struct SyscallDecoder<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> {
@@ -97,14 +94,14 @@ impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallDecoder
     fn extract_primitive<Item: TryFrom<T>>(&mut self) -> Result<Item, DecodeError>
     where
         T: Copy,
-        <Item as TryFrom<T>>::Error: Into<DecodeError>,
     {
         let reg = self.args.registers[self.idx];
         self.idx += 1;
-        reg.try_into().map_err(|e: Item::Error| e.into())
+        reg.try_into().map_err(|_| DecodeError::InvalidData)
     }
 }
 
+/*
 impl<const NR_REGS: usize> SyscallArguments<64, NR_REGS> for u32 {
     type RegisterType = u64;
 
@@ -136,5 +133,89 @@ impl<const NR_REGS: usize> SyscallArguments<64, NR_REGS> for u64 {
         Self: Sized,
     {
         decoder.extract_primitive()
+    }
+}
+*/
+
+trait ShouldAuto {}
+
+impl ShouldAuto for u32 {}
+impl ShouldAuto for u64 {}
+impl ShouldAuto for u16 {}
+impl ShouldAuto for u8 {}
+
+impl<T: Copy, const BITS: usize, const NR_REGS: usize> SyscallArguments<BITS, NR_REGS> for T
+where
+    T: Into<u64>,
+    T: TryFrom<u64>,
+    T: ShouldAuto,
+{
+    type RegisterType = u64;
+
+    fn encode(&self, encoder: &mut SyscallEncoder<Self::RegisterType, BITS, NR_REGS>) {
+        encoder.push_primitive(*self)
+    }
+
+    fn decode(
+        decoder: &mut SyscallDecoder<Self::RegisterType, BITS, NR_REGS>,
+    ) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        decoder.extract_primitive()
+    }
+}
+
+impl<const BITS: usize, const NR_REGS: usize> SyscallArguments<BITS, NR_REGS> for bool {
+    type RegisterType = u64;
+
+    fn encode(&self, encoder: &mut SyscallEncoder<Self::RegisterType, BITS, NR_REGS>) {
+        let item: u8 = (*self).into();
+        encoder.push_primitive(item)
+    }
+
+    fn decode(
+        decoder: &mut SyscallDecoder<Self::RegisterType, BITS, NR_REGS>,
+    ) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        let item = u8::decode(decoder)?;
+        match item {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(DecodeError::InvalidData),
+        }
+    }
+}
+
+impl<T, const BITS: usize, const NR_REGS: usize> SyscallArguments<BITS, NR_REGS> for Option<T>
+where
+    T: SyscallArguments<BITS, NR_REGS, RegisterType = u64>,
+{
+    type RegisterType = u64;
+
+    fn encode(&self, encoder: &mut SyscallEncoder<Self::RegisterType, BITS, NR_REGS>) {
+        if let Some(t) = self {
+            encoder.push_primitive(true);
+            t.encode(encoder);
+        } else {
+            encoder.push_primitive(false);
+        }
+    }
+
+    fn decode(
+        decoder: &mut SyscallDecoder<Self::RegisterType, BITS, NR_REGS>,
+    ) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        let flag = bool::decode(decoder)?;
+        if flag {
+            let t = T::decode(decoder)?;
+            Ok(Some(t))
+        } else {
+            Ok(None)
+        }
     }
 }

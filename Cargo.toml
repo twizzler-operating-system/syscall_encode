@@ -1,5 +1,5 @@
 [package]
-name = "syscall_serde"
+name = "syscall_encode"
 version = "0.1.0"
 edition = "2021"
 

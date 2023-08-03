@@ -7,6 +7,17 @@ struct SyscallInfo {
     reg_bits: usize,
 }
 
+const DEFAULT_NR_REGS: Option<&'static str> = option_env!("SYSCALL_ENCODE_DEFAULT_NR_REGS");
+const DEFAULT_NR_BITS: Option<&'static str> = option_env!("SYSCALL_ENCODE_DEFAULT_NR_BITS");
+
+fn default_nr_regs() -> Option<usize> {
+    DEFAULT_NR_REGS.map(|s| s.parse().ok()).flatten()
+}
+
+fn default_nr_bits() -> Option<usize> {
+    DEFAULT_NR_BITS.map(|s| s.parse().ok()).flatten()
+}
+
 fn extract_outer_attrs(fullspan: Span, attrs: Vec<Attribute>) -> syn::Result<SyscallInfo> {
     let mut regs = None;
     let mut reg_bits = None;
@@ -52,14 +63,21 @@ fn extract_outer_attrs(fullspan: Span, attrs: Vec<Attribute>) -> syn::Result<Sys
             }
         }
     }
+    if regs.is_none() {
+        regs = default_nr_regs();
+    }
+
+    if reg_bits.is_none() {
+        reg_bits = default_nr_bits();
+    }
     Ok(SyscallInfo {
         regs: regs.ok_or(Error::new(
             fullspan,
-            "derive macro SyscallInfo requires attribute 'num_regs'".to_string(),
+            "derive macro SyscallEncode requires attribute 'num_regs' or a default value specified via environment".to_string(),
         ))?,
         reg_bits: reg_bits.ok_or(Error::new(
             fullspan,
-            "derive macro SyscallInfo requires attribute 'reg_type'".to_string(),
+            "derive macro SyscallEncode requires attribute 'reg_bits' or a default value specified via environment".to_string(),
         ))?,
     })
 }
@@ -79,7 +97,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
 
     //let required_trait_bounds = vec!["core::default::Default", "core::fmt::Debug"];
     let streams = match data {
-        syn::Data::Struct(st) => handle_struct(&st),
+        syn::Data::Struct(st) => handle_struct(&st, &sysinfo),
         syn::Data::Enum(_) => todo!(),
         syn::Data::Union(_) => todo!(),
     }?;
@@ -115,7 +133,8 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     .into())
 }
 
-fn handle_struct(st: &DataStruct) -> syn::Result<(TokenStream, TokenStream)> {
+fn handle_struct(st: &DataStruct, info: &SyscallInfo) -> syn::Result<(TokenStream, TokenStream)> {
+    let SyscallInfo { reg_bits, regs } = info.clone();
     let encode = st
         .fields
         .iter()
@@ -143,7 +162,7 @@ fn handle_struct(st: &DataStruct) -> syn::Result<(TokenStream, TokenStream)> {
                 .map(|field| {
                     let name = field.ident.as_ref().unwrap();
                     let ty = &field.ty;
-                    quote! {#name : #ty::decode(decoder)?}
+                    quote! {#name : <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self{#(#internal),*})}
@@ -155,7 +174,7 @@ fn handle_struct(st: &DataStruct) -> syn::Result<(TokenStream, TokenStream)> {
                 .enumerate()
                 .map(|(_num, field)| {
                     let ty = &field.ty;
-                    quote! {#ty::decode(decoder)?}
+                    quote! {<#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self(#(#internal),*))}
