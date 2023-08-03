@@ -120,30 +120,48 @@ fn handle_struct(st: &DataStruct) -> syn::Result<(TokenStream, TokenStream)> {
         .fields
         .iter()
         .enumerate()
-        .map(|(_num, field)| {
-            let name = field.ident.as_ref().unwrap();
-            quote! {
-                self.#name.encode(encoder);
+        .map(|(num, field)| {
+            let num = syn::Index::from(num);
+            match field.ident.as_ref() {
+                Some(name) => {
+                    quote! {
+                        self.#name.encode(encoder);
+                    }
+                }
+                None => quote! {
+                    self.#num.encode(encoder);
+                },
             }
         })
         .collect();
 
-    let decode: Vec<_> = st
-        .fields
-        .iter()
-        .map(|field| {
-            let name = field.ident.as_ref().unwrap();
-            let ty = &field.ty;
-            quote! {#name : #ty::decode(decoder)?}
-        })
-        .collect();
+    let decode = match &st.fields {
+        syn::Fields::Named(fields) => {
+            let internal: Vec<_> = fields
+                .named
+                .iter()
+                .map(|field| {
+                    let name = field.ident.as_ref().unwrap();
+                    let ty = &field.ty;
+                    quote! {#name : #ty::decode(decoder)?}
+                })
+                .collect();
+            quote! {Ok(Self{#(#internal),*})}
+        }
+        syn::Fields::Unnamed(fields) => {
+            let internal: Vec<_> = fields
+                .unnamed
+                .iter()
+                .enumerate()
+                .map(|(_num, field)| {
+                    let ty = &field.ty;
+                    quote! {#ty::decode(decoder)?}
+                })
+                .collect();
+            quote! {Ok(Self(#(#internal),*))}
+        }
+        syn::Fields::Unit => todo!(),
+    };
 
-    Ok((
-        encode,
-        quote! {
-            Ok(Self {
-                #(#decode),*
-            })
-        },
-    ))
+    Ok((encode, decode))
 }

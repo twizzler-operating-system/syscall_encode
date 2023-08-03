@@ -47,3 +47,27 @@ fn foo() {
 
     assert_eq!(foo, foo2);
 }
+
+#[test]
+fn test_nameless() {
+    use syscall_macros_traits::SyscallArgs;
+    use syscall_macros_traits::SyscallArguments;
+    #[derive(syscall_macros::SyscallSerialize, Debug, Clone, Eq, PartialEq, PartialOrd)]
+    #[num_regs = 6]
+    #[reg_bits = 64]
+    struct Bar(u32);
+
+    let bar = Bar(42);
+    // step 1: encode Foo into registers
+    let mut encoder = syscall_macros_traits::SyscallEncoder::default();
+    bar.encode(&mut encoder);
+    let args: SyscallArgs<u64, 6> = encoder.finish();
+
+    // 'args' can be passed to raw_syscall
+
+    // decode back into a Foo.
+    let mut decoder = syscall_macros_traits::SyscallDecoder::new(args);
+    let bar2 = Bar::decode(&mut decoder).unwrap();
+
+    assert_eq!(bar, bar2);
+}
