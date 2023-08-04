@@ -1,6 +1,3 @@
-// TODO
-// 3. pointers
-
 //!
 //! # Pointers and References
 //! ```compile_fail
@@ -89,6 +86,20 @@ mod test {
             z: None,
         };
         run_through(foo);
+    }
+
+    #[test]
+    fn test_big() {
+        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        struct Bar(u64, u64, u64, u64, u64, u64, u64, u64);
+
+        let bar = Bar(1, 2, 3, 4, 5, 6, 7, 8);
+        let bar2 = bar.clone();
+        SyscallEncoder::encode_with(bar, |args| {
+            let mut decoder = SyscallDecoder::new(args);
+            let item2 = Bar::decode(&mut decoder).unwrap();
+            assert_eq!(bar2, item2);
+        });
     }
 
     #[test]

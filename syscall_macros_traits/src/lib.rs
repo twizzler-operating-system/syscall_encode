@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::MaybeUninit};
 
 #[derive(Debug)]
 pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
@@ -10,6 +10,8 @@ pub trait SyscallRegister {
     const BITS: usize;
     type Ty;
     fn zero() -> Self;
+    fn fill(&self, mem: &mut [u8]);
+    fn from_stack_bytes(mem: &[u8]) -> Self;
 }
 
 impl SyscallRegister for u64 {
@@ -17,6 +19,18 @@ impl SyscallRegister for u64 {
     type Ty = Self;
     fn zero() -> Self {
         0
+    }
+
+    fn fill(&self, mem: &mut [u8]) {
+        let bytes = self.to_ne_bytes();
+        mem.split_at_mut(8).0.copy_from_slice(&bytes)
+    }
+
+    fn from_stack_bytes(mem: &[u8]) -> Self {
+        let bytes = [
+            mem[0], mem[1], mem[2], mem[3], mem[4], mem[5], mem[6], mem[7],
+        ];
+        Self::from_ne_bytes(bytes)
     }
 }
 
@@ -45,35 +59,84 @@ impl<'a, T> From<&'a T> for UserPointer<'a, T> {
     }
 }
 
-impl<T: Default + SyscallRegister + Copy, const BITS: usize, const NR_REGS: usize> Default
+impl<T: SyscallRegister + Copy, const BITS: usize, const NR_REGS: usize> Default
     for SyscallEncoder<T, BITS, NR_REGS>
 {
     fn default() -> Self {
         Self {
-            regs: [T::default(); NR_REGS],
             idx: Default::default(),
             _pd: Default::default(),
+            max: 0,
+            used: 0,
+            args: SyscallArgs {
+                registers: [T::zero(); NR_REGS],
+                extra_data: None,
+            },
         }
     }
 }
 
 pub struct SyscallEncoder<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> {
-    regs: [T; NR_REGS],
     idx: usize,
+    args: SyscallArgs<T, NR_REGS>,
+    max: usize,
+    used: usize,
     _pd: core::marker::PhantomData<T>,
 }
 
-impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallEncoder<T, BITS, NR_REGS> {
+impl<T: SyscallRegister + Copy, const BITS: usize, const NR_REGS: usize>
+    SyscallEncoder<T, BITS, NR_REGS>
+{
     fn push_primitive(&mut self, item: impl Into<T>) {
-        self.regs[self.idx] = item.into();
-        self.idx += 1;
+        if self.idx == NR_REGS - 1 {
+            // Out of registers, push to stack
+            let stack = self
+                .args
+                .extra_data
+                .expect("tried to push register to stack, but no stack space was allocated");
+            let s = unsafe {
+                // TODO: bounds checking
+                core::slice::from_raw_parts_mut(stack.add(self.used), self.max - self.used)
+            };
+            let reg: T = item.into();
+            reg.fill(s);
+            self.used += core::mem::size_of::<T>();
+        } else {
+            self.args.registers[self.idx] = item.into();
+            self.idx += 1;
+        }
     }
 
-    pub fn finish(self) -> SyscallArgs<T, NR_REGS> {
-        SyscallArgs {
-            registers: self.regs,
-            extra_data: None,
+    fn new(alloc: &mut [MaybeUninit<u8>]) -> Self {
+        Self {
+            args: SyscallArgs {
+                registers: [T::zero(); NR_REGS],
+                extra_data: Some(alloc as *mut _ as *mut u8),
+            },
+            max: alloc.len(),
+            ..Default::default()
         }
+    }
+
+    pub fn encode_with<Item: SyscallArguments<BITS, NR_REGS, RegisterType = T>, R>(
+        item: Item,
+        f: impl FnOnce(SyscallArgs<T, NR_REGS>) -> R,
+    ) -> R {
+        let size = core::mem::size_of::<Item>();
+        alloca::with_alloca(size, |alloc| {
+            let mut encoder = Self::new(alloc);
+            encoder.size_hint(size);
+            item.encode(&mut encoder);
+            let args = encoder.finish();
+            let res = f(args);
+            res
+        })
+    }
+
+    pub fn size_hint(&self, _size: usize) {}
+
+    pub fn finish(self) -> SyscallArgs<T, NR_REGS> {
+        self.args
     }
 
     pub const fn bits(&self) -> usize {
@@ -88,6 +151,7 @@ impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallEncoder
 pub struct SyscallDecoder<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> {
     args: SyscallArgs<T, NR_REGS>,
     idx: usize,
+    used: usize,
     _pd: core::marker::PhantomData<T>,
 }
 
@@ -96,6 +160,7 @@ impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallDecoder
         Self {
             args,
             idx: 0,
+            used: 0,
             _pd: std::marker::PhantomData,
         }
     }
@@ -104,8 +169,27 @@ impl<T: SyscallRegister, const BITS: usize, const NR_REGS: usize> SyscallDecoder
     where
         T: Copy,
     {
-        let reg = self.args.registers[self.idx];
-        self.idx += 1;
+        let reg = if self.idx == NR_REGS - 1 {
+            // Grab from the stack
+
+            let stack = self
+                .args
+                .extra_data
+                .expect("tried to push register to stack, but no stack space was allocated");
+            let reg_size = core::mem::size_of::<T>();
+            let s = unsafe {
+                // TODO: bounds checking
+                core::slice::from_raw_parts(stack.add(self.used), reg_size)
+            };
+            let reg = T::from_stack_bytes(s);
+            self.used += core::mem::size_of::<T>();
+            reg
+        } else {
+            let reg = self.args.registers[self.idx];
+            self.idx += 1;
+            reg
+        };
+
         reg.try_into().map_err(|_| DecodeError::InvalidData)
     }
 }

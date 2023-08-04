@@ -138,6 +138,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
         impl #generics ::syscall_macros_traits::SyscallArguments<#num_bits, #num_regs> for #struct_name_ident #generics #where_clause {
             type RegisterType = #reg_type;
             fn encode(&self, encoder: &mut ::syscall_macros_traits::SyscallEncoder<Self::RegisterType, #num_bits, #num_regs>) {
+                encoder.size_hint(core::mem::size_of::<Self>());
                 #encode_stream
             }
 
