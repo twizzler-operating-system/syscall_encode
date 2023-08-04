@@ -1,6 +1,6 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, spanned::Spanned};
-use syn::{Attribute, DataStruct, DeriveInput, Error};
+use syn::{Attribute, DataEnum, DataStruct, DeriveInput, Error, Type};
 
 struct SyscallInfo {
     regs: usize,
@@ -82,6 +82,22 @@ fn extract_outer_attrs(fullspan: Span, attrs: Vec<Attribute>) -> syn::Result<Sys
     })
 }
 
+fn check_ty_allowed(span: Span, ty: &Type) -> Result<(), syn::Error> {
+    match ty {
+        Type::Ptr(_) => return Err(syn::Error::new(span, "cannot encode a raw pointer into syscall registers. Use a UserPointer instead.")),
+        Type::Reference(_) => return Err(syn::Error::new(span, "cannot encode a reference into syscall registers. Use a UserPointer instead.")),
+        Type::Slice(_) => return Err(syn::Error::new(span, "cannot encode a non-constant size slice into syscall registers.")),
+        Type::TraitObject(_) => return Err(syn::Error::new(span, "cannot encode a trait object into syscall registers.")),     
+        Type::ImplTrait(_) => return Err(syn::Error::new(span, "cannot encode an impl trait into syscall registers.")),
+        Type::Infer(_) => return Err(syn::Error::new(span, "cannot encode an inferred type into syscall registers.")),
+        Type::Macro(_) => return Err(syn::Error::new(span, "macros are not supported in SyscallArguments deriving.")),
+        Type::Never(_) => return Err(syn::Error::new(span, "what part of 'never' was unclear?")),
+        Type::Verbatim(_) => {Ok(())},
+        Type::BareFn(_) => return Err(syn::Error::new(span, "cannot encode a bare function into syscall registers.")),           
+        _ => {Ok(())},
+    }
+}
+
 pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Error> {
     let span = input.__span();
     let DeriveInput {
@@ -96,9 +112,9 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     let sysinfo = extract_outer_attrs(span, attrs)?;
 
     //let required_trait_bounds = vec!["core::default::Default", "core::fmt::Debug"];
-    let streams = match data {
-        syn::Data::Struct(st) => handle_struct(&st, &sysinfo),
-        syn::Data::Enum(_) => todo!(),
+    let streams = match &data {
+        syn::Data::Struct(st) => handle_struct(span, st, &sysinfo),
+        syn::Data::Enum(en) => handle_enum(span, en, &sysinfo),
         syn::Data::Union(_) => todo!(),
     }?;
 
@@ -133,7 +149,139 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     .into())
 }
 
-fn handle_struct(st: &DataStruct, info: &SyscallInfo) -> syn::Result<(TokenStream, TokenStream)> {
+fn handle_enum(
+    _span: Span,
+    en: &DataEnum,
+    info: &SyscallInfo,
+) -> syn::Result<(TokenStream, TokenStream)> {
+    for var in &en.variants {
+        for f in &var.fields {
+            check_ty_allowed(f.ty.__span(), &f.ty)?;
+        }
+    } 
+               
+    let SyscallInfo { regs, reg_bits } = info;
+    let encode = {
+        let internal: Vec<_> = en
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(num, var)| {
+                let num = num as u64;
+                let name = &var.ident;
+
+                let (names, structure) = match &var.fields {
+                    syn::Fields::Named(fields) => {
+                        let names: Vec<_> = fields
+                            .named
+                            .iter()
+                            .map(|field| field.ident.as_ref().unwrap().clone())
+                            .collect();
+                        (names.clone(), quote!({#(#names),*}))
+                    }
+                    syn::Fields::Unnamed(fields) => {
+                        let names: Vec<_> = fields
+                            .unnamed
+                            .iter()
+                            .enumerate()
+                            .map(|(num, field)| {
+                                let s = format!("x{}", num);
+                                Ident::new(s.as_str(), field.__span())
+                            })
+                            .collect();
+                        (names.clone(), quote!((#(#names),*)))
+                    }
+                    syn::Fields::Unit => (Vec::new(), quote!()),
+                };
+
+                let code = names.iter().map(|name| {
+                    quote! {
+                        #name.encode(encoder);
+                    }
+                });
+                //let disc = quote!(core::mem::discriminant(self).encode(encoder););
+                let disc = quote! {
+                    {let disc: u64 = #num; disc.encode(encoder);}
+                };
+                quote! {
+                    Self::#name #structure => {#disc #(#code)*}
+                }
+            })
+            .collect();
+        quote! {match self {#(#internal)*}}
+    };
+
+    let decode = {
+        let internal: Vec<_> = en
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(num, var)| {
+                let num = num as u64;
+                let name = &var.ident;
+
+                let (_names, structure, code) = match &var.fields {
+                    syn::Fields::Named(fields) => {
+                        let names: Vec<_> = fields
+                            .named
+                            .iter()
+                            .map(|field| field.ident.as_ref().unwrap().clone())
+                            .collect();
+                        let code: Vec<_> = fields.named.iter().map(|field| {
+                            let name = field.ident.as_ref().unwrap();
+                            let ty = &field.ty;
+                            quote!{
+                                let #name = <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?;                            
+                            }
+                        }).collect();
+                        (names.clone(), quote!({#(#names),*}), code)
+                    }
+                    syn::Fields::Unnamed(fields) => {
+                        let names: Vec<_> = fields
+                            .unnamed
+                            .iter()
+                            .enumerate()
+                            .map(|(num, field)| {
+                                let s = format!("x{}", num);
+                                Ident::new(s.as_str(), field.__span())
+                            })
+                            .collect();
+                        
+                        let code: Vec<_> = fields.unnamed.iter().zip(names.iter()).map(|(field, ident)| {
+                            let name = ident;
+                            let ty = &field.ty;
+                            quote!{
+                                let #name = <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?;                            
+                            }
+                        }).collect();                       
+                        (names.clone(), quote!((#(#names),*)), code)
+                    }
+                    syn::Fields::Unit => (Vec::new(), quote!(), Vec::new()),
+                };
+                quote! {
+                    #num => {
+                        #(#code);*
+                        Self::#name #structure
+                    }
+                }
+            })
+            .collect();
+        quote! {
+            let disc = u64::decode(decoder)?;
+            Ok(match disc {
+                #(#internal)*
+                _ => return Err(::syscall_macros_traits::DecodeError::InvalidData)
+            })
+        }
+    };
+
+    Ok((encode, decode))
+}
+
+fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Result<(TokenStream, TokenStream)> {
+    for f in &st.fields {
+        check_ty_allowed(f.ty.__span(), &f.ty)?;
+    }
     let SyscallInfo { reg_bits, regs } = info.clone();
     let encode = st
         .fields
@@ -179,7 +327,9 @@ fn handle_struct(st: &DataStruct, info: &SyscallInfo) -> syn::Result<(TokenStrea
                 .collect();
             quote! {Ok(Self(#(#internal),*))}
         }
-        syn::Fields::Unit => todo!(),
+        syn::Fields::Unit => {
+            quote! {Ok(Self{})}
+        }
     };
 
     Ok((encode, decode))

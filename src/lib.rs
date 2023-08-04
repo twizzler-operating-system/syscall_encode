@@ -1,65 +1,127 @@
 // TODO
-// 1: enums, unit structs
-// 2. nesting
 // 3. pointers
 
-//#[cfg(test)]
+//!
+//! # Pointers and References
+//! ```compile_fail
+//! #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+//! struct Bar<'a> { x: &'a u32 }
+//! ```
+
+#[cfg(test)]
 mod test {
-    #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-    struct Foo {
-        x: u32,
-        y: u32,
-        z: Option<u32>,
-        a: Option<u32>,
+    use syscall_macros_traits::{SyscallArguments, SyscallDecoder, SyscallEncoder, UserPointer};
+
+    fn run_through<T>(item: T)
+    where
+        T: SyscallArguments<64, 6> + core::fmt::Debug + Clone + Eq,
+    {
+        let mut encoder: SyscallEncoder<<T as SyscallArguments<64, 6>>::RegisterType, 64, 6> =
+            SyscallEncoder::default();
+        item.encode(&mut encoder);
+        let args = encoder.finish();
+
+        let mut decoder = SyscallDecoder::new(args);
+        let item2 = T::decode(&mut decoder).unwrap();
+        assert_eq!(item, item2);
     }
 
     #[test]
-    fn foo() {
-        use syscall_macros_traits::SyscallArgs;
-        use syscall_macros_traits::SyscallArguments;
+    fn test_enum() {
+        #[derive(syscall_macros::SyscallEncode, Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        enum Foo {
+            One,
+            Two(u32),
+            Three { x: bool },
+            Four { x: bool, y: u8 },
+            Five(u32, bool),
+        }
+        let foo = Foo::One;
+        run_through(foo);
 
+        let foo = Foo::Two(89);
+        run_through(foo);
+
+        let foo = Foo::Three { x: true };
+        run_through(foo);
+
+        let foo = Foo::Four { x: true, y: 45 };
+        run_through(foo);
+
+        let foo = Foo::Five(120, false);
+        run_through(foo);
+    }
+    #[test]
+    fn test_unit() {
+        {
+            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+            struct Foo;
+            let foo = Foo {};
+            run_through(foo);
+        }
+
+        {
+            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+            struct Foo();
+            let foo = Foo {};
+            run_through(foo);
+        }
+
+        {
+            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+            struct Foo {}
+            let foo = Foo {};
+            run_through(foo);
+        }
+    }
+
+    #[test]
+    fn test_basic() {
+        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        struct Foo {
+            x: u32,
+            y: Option<u32>,
+            z: Option<u32>,
+        }
         let foo = Foo {
             x: 8,
-            y: 9,
+            y: Some(9),
             z: None,
-            a: Some(42),
         };
-        // step 1: encode Foo into registers
-        let mut encoder = syscall_macros_traits::SyscallEncoder::default();
-        foo.encode(&mut encoder);
-        let args: SyscallArgs<u64, 6> = encoder.finish();
-
-        // 'args' can be passed to raw_syscall
-
-        // decode back into a Foo.
-        let mut decoder = syscall_macros_traits::SyscallDecoder::new(args);
-        let foo2 = Foo::decode(&mut decoder).unwrap();
-
-        assert_eq!(foo, foo2);
+        run_through(foo);
     }
 
     #[test]
     fn test_nameless() {
-        use syscall_macros_traits::SyscallArgs;
-        use syscall_macros_traits::SyscallArguments;
         #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        #[num_regs = 6]
-        #[reg_bits = 64]
         struct Bar(u32);
 
-        let bar = Bar(42);
-        // step 1: encode Foo into registers
-        let mut encoder = syscall_macros_traits::SyscallEncoder::default();
-        bar.encode(&mut encoder);
-        let args: SyscallArgs<u64, 6> = encoder.finish();
+        run_through(Bar(3));
+    }
 
-        // 'args' can be passed to raw_syscall
+    #[test]
+    fn test_refs() {
+        let q: u32 = 0;
+        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        struct Bar<'a> {
+            x: UserPointer<'a, u32>,
+        }
+        run_through(Bar {
+            x: UserPointer::from(&q),
+        });
+    }
 
-        // decode back into a Foo.
-        let mut decoder = syscall_macros_traits::SyscallDecoder::new(args);
-        let bar2 = Bar::decode(&mut decoder).unwrap();
+    #[test]
+    fn test_nested() {
+        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        struct Foo {
+            x: u32,
+            z: bool,
+        }
+        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+        struct Bar(u32, Foo, bool);
 
-        assert_eq!(bar, bar2);
+        run_through(Bar(3, Foo { x: 9, z: false }, true));
     }
 
     #[test]

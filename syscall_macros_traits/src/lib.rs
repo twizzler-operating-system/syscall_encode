@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 #[derive(Debug)]
 pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
     pub registers: [T; NR_REGS],
@@ -19,7 +21,7 @@ impl SyscallRegister for u64 {
 }
 
 pub trait SyscallArguments<const BITS: usize, const NR_REGS: usize> {
-    type RegisterType: SyscallRegister;
+    type RegisterType: SyscallRegister + Default + Copy;
     fn encode(&self, encoder: &mut SyscallEncoder<Self::RegisterType, BITS, NR_REGS>);
     fn decode(
         decoder: &mut SyscallDecoder<Self::RegisterType, BITS, NR_REGS>,
@@ -33,8 +35,15 @@ pub enum DecodeError {
     InvalidData,
 }
 
-#[derive(Debug)]
-pub struct UserPointer(*mut u8);
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[repr(transparent)]
+pub struct UserPointer<'a, T>(*mut u8, PhantomData<&'a T>);
+
+impl<'a, T> From<&'a T> for UserPointer<'a, T> {
+    fn from(value: &'a T) -> Self {
+        Self(value as *const _ as *const u8 as *mut u8, PhantomData)
+    }
+}
 
 impl<T: Default + SyscallRegister + Copy, const BITS: usize, const NR_REGS: usize> Default
     for SyscallEncoder<T, BITS, NR_REGS>
@@ -139,8 +148,9 @@ impl<const NR_REGS: usize> SyscallArguments<64, NR_REGS> for u64 {
 
 trait ShouldAuto {}
 
-impl ShouldAuto for u32 {}
+impl ShouldAuto for u128 {}
 impl ShouldAuto for u64 {}
+impl ShouldAuto for u32 {}
 impl ShouldAuto for u16 {}
 impl ShouldAuto for u8 {}
 
@@ -163,6 +173,27 @@ where
         Self: Sized,
     {
         decoder.extract_primitive()
+    }
+}
+
+impl<'a, T, const BITS: usize, const NR_REGS: usize> SyscallArguments<BITS, NR_REGS>
+    for UserPointer<'a, T>
+{
+    type RegisterType = u64;
+
+    fn encode(&self, encoder: &mut SyscallEncoder<Self::RegisterType, BITS, NR_REGS>) {
+        let x: Self::RegisterType = self.0 as Self::RegisterType;
+        encoder.push_primitive(x)
+    }
+
+    fn decode(
+        decoder: &mut SyscallDecoder<Self::RegisterType, BITS, NR_REGS>,
+    ) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        let x: Self::RegisterType = decoder.extract_primitive()?;
+        Ok(Self(x as *mut u8, PhantomData))
     }
 }
 
