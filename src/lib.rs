@@ -5,8 +5,18 @@
 //! struct Bar<'a> { x: &'a u32 }
 //! ```
 
+// TODO:
+// 0: cleanup
+// 1: finish table API
+// 2: return API
+// 3. document
+// 4. bench
+
 use syscall_macros::SyscallEncode;
-use syscall_macros_traits::{table::SyscallApi, SyscallArgs};
+use syscall_macros_traits::{
+    api::{SyscallApi, SyscallError, SyscallErrorType, SyscallReturn, SyscallReturnType},
+    SyscallArgs,
+};
 
 #[cfg(test)]
 mod test {
@@ -170,13 +180,50 @@ mod test {
     }
 }
 
+#[derive(Clone, Copy)]
+struct SysRet {
+    x: u64,
+    y: u64,
+}
+
+const BITS: usize = 64;
+const NR_REGS: usize = 6;
 pub fn api(num: u64, args: SyscallArgs<u64, 6>) {
-    #[derive(SyscallEncode)]
+    #[derive(SyscallEncode, Clone, Copy)]
     struct Foo;
-    impl SyscallApi<u64> for Foo {
+    impl SyscallApi<u64, SysRet, BITS, NR_REGS> for Foo {
         const NUM: u64 = 1;
+
+        type ReturnType = u64;
+        type ReturnErrorType = u64;
     }
 
-    let _res =
-        unsafe { syscall_macros_traits::syscall_api!(num, args, 64, 6, u64, (Foo, |_x, _y| {})) };
+    impl SyscallReturn<u64> for SysRet {
+        unsafe fn decode<Target: SyscallReturnType, Error: SyscallErrorType>(
+            &self,
+        ) -> Result<Target, SyscallError<Error>> {
+            todo!()
+        }
+
+        unsafe fn encode<Target: SyscallReturnType, Error: SyscallErrorType>(
+            _input: Result<Target, SyscallError<Error>>,
+        ) -> Self
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+    }
+
+    let _res = unsafe {
+        syscall_macros_traits::syscall_api!(
+            num,
+            args,
+            64,
+            6,
+            u64,
+            SysRet,
+            (Foo, |_num, _args| { Ok::<u64, u64>(83u64) })
+        )
+    };
 }

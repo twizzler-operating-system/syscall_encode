@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, mem::MaybeUninit};
 
-pub mod ret;
+pub mod api;
 pub mod table;
 #[derive(Debug)]
 pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
@@ -8,7 +8,7 @@ pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
     pub extra_data: Option<*mut u8>,
 }
 
-pub trait SyscallRegister {
+pub trait SyscallRegister: Copy {
     const BITS: usize;
     type Ty;
     fn zero() -> Self;
