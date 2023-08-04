@@ -1,5 +1,7 @@
 use std::{marker::PhantomData, mem::MaybeUninit};
 
+pub mod ret;
+pub mod table;
 #[derive(Debug)]
 pub struct SyscallArgs<T: SyscallRegister, const NR_REGS: usize> {
     pub registers: [T; NR_REGS],
@@ -42,11 +44,24 @@ pub trait SyscallArguments<const BITS: usize, const NR_REGS: usize> {
     ) -> Result<Self, DecodeError>
     where
         Self: Sized;
+    unsafe fn with<R, F: FnOnce(Self::RegisterType, Self) -> R>(
+        num: Self::RegisterType,
+        args: SyscallArgs<Self::RegisterType, NR_REGS>,
+        call: F,
+    ) -> Result<R, DecodeError>
+    where
+        Self: Sized,
+    {
+        let mut decoder = SyscallDecoder::new(args);
+        let me = Self::decode(&mut decoder)?;
+        Ok((call)(num, me))
+    }
 }
 
 #[derive(Debug)]
 pub enum DecodeError {
     InvalidData,
+    InvalidNum,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]

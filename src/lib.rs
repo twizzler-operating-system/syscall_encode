@@ -5,6 +5,9 @@
 //! struct Bar<'a> { x: &'a u32 }
 //! ```
 
+use syscall_macros::SyscallEncode;
+use syscall_macros_traits::{table::SyscallApi, SyscallArgs};
+
 #[cfg(test)]
 mod test {
     use syscall_macros_traits::{SyscallArguments, SyscallDecoder, SyscallEncoder, UserPointer};
@@ -165,4 +168,15 @@ mod test {
         assert_eq!(encoder.bits(), 64);
         assert_eq!(encoder.nr_regs(), 27);
     }
+}
+
+pub fn api(num: u64, args: SyscallArgs<u64, 6>) {
+    #[derive(SyscallEncode)]
+    struct Foo;
+    impl SyscallApi<u64> for Foo {
+        const NUM: u64 = 1;
+    }
+
+    let _res =
+        unsafe { syscall_macros_traits::syscall_api!(num, args, 64, 6, u64, (Foo, |_x, _y| {})) };
 }
