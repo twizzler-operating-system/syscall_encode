@@ -1,47 +1,66 @@
-use crate::{DecodeError, SyscallArgs, SyscallArguments, SyscallEncoder, SyscallRegister};
+use std::alloc::Layout;
 
-pub trait SyscallApi<
-    T: SyscallRegister,
-    R: SyscallReturn<T>,
-    const BITS: usize,
-    const NR_REGS: usize,
->: Copy + SyscallArguments<BITS, NR_REGS, RegisterType = T>
-{
-    const NUM: T;
-    type ReturnType: SyscallReturnType;
-    type ReturnErrorType: SyscallErrorType;
+use crate::{
+    abi::{Allocation, SyscallAbi},
+    decoder::{DecodeError, SyscallDecoder},
+    encoder::{EncodeError, SyscallEncoder},
+    error::SyscallError,
+};
 
-    fn perform_call(
-        &self,
-        syscall: impl FnOnce(T, SyscallArgs<T, NR_REGS>) -> R,
-    ) -> Result<Self::ReturnType, SyscallError<Self::ReturnErrorType>> {
-        let res = SyscallEncoder::encode_with(*self, |args| {
-            let raw_return = syscall(Self::NUM, args);
-            unsafe { raw_return.decode() }
-        });
-        res
+pub mod impls;
+
+pub trait SyscallApi<Abi: SyscallAbi>: SyscallEncodable<Abi, Abi::SyscallArgType> {
+    type ReturnType: SyscallEncodable<Abi, Abi::SyscallRetType>;
+    const NUM: Abi::SyscallNumType;
+    type ErrorType: Copy;
+
+    fn perform_call(&self, abi: &Abi) -> Result<Self::ReturnType, SyscallError<Self::ErrorType>> {
+        let layout = Layout::new::<Self>();
+        abi.with_alloc(layout, |abi: &Abi, alloc| {
+            let mut encoder = abi.create_sender_encoder();
+            encoder
+                .encode(*self, &alloc)
+                .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
+            let args = encoder.finish();
+
+            let result = abi.syscall_impl(Self::NUM, args);
+
+            let mut decoder = abi.create_sender_decoder(result);
+            let result = decoder
+                .decode(result)
+                .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
+            Ok(result)
+        })
+        .map_err(|e| e.into())
+    }
+
+    unsafe fn with<
+        F: FnOnce(Abi::SyscallNumType, Self) -> Result<Self::ReturnType, Self::ErrorType>,
+    >(
+        abi: &Abi,
+        num: Abi::SyscallNumType,
+        args: Abi::SyscallArgType,
+        call: F,
+    ) -> Result<Self::ReturnType, SyscallError<Self::ErrorType>>
+    where
+        Self: Sized,
+    {
+        let (mut decoder, mut encoder) = abi.create_receiver_pair(args);
+        let me = Self::decode(&mut decoder)?;
+        let res = (call)(num, me);
+        res.map_err(|e| SyscallError::SyscallError(e))
     }
 }
 
-pub trait SyscallReturn<T: SyscallRegister> {
-    unsafe fn decode<Target: SyscallReturnType, Error: SyscallErrorType>(
+pub trait SyscallEncodable<Abi: SyscallAbi + ?Sized, EncodedType: Copy>: Copy {
+    fn encode<'a, Encoder: SyscallEncoder<'a, Abi, EncodedType>>(
         &self,
-    ) -> Result<Target, SyscallError<Error>>;
-
-    unsafe fn encode<Target: SyscallReturnType, Error: SyscallErrorType>(
-        input: Result<Target, SyscallError<Error>>,
-    ) -> Self
+        encoder: &mut Encoder,
+        alloc: &Allocation,
+    ) -> Result<(), EncodeError>;
+    fn decode<'a, Decoder: SyscallDecoder<'a, Abi, EncodedType>>(
+        decoder: &mut Decoder,
+    ) -> Result<Self, DecodeError>
     where
         Self: Sized;
-}
-
-pub trait SyscallErrorType: Copy {}
-pub trait SyscallReturnType: Copy {}
-
-impl SyscallErrorType for u64 {}
-impl SyscallReturnType for u64 {}
-
-pub enum SyscallError<Error: SyscallErrorType> {
-    Decode(DecodeError),
-    CallError(Error),
 }
