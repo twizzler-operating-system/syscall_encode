@@ -1,6 +1,6 @@
 mod abi;
 mod api;
-mod decoder;
+//mod decoder;
 mod encoder;
 mod error;
 mod table;
@@ -9,6 +9,7 @@ mod table;
 mod test {
     use std::{
         alloc::Layout,
+        fmt::Debug,
         fs::hard_link,
         marker::PhantomData,
         sync::{Arc, Mutex},
@@ -16,14 +17,12 @@ mod test {
 
     use crate::{
         abi::{
-            registers_and_stack::{
-                RegisterAndStackData, RegistersAndStackDecoder, RegistersAndStackEncoder,
-            },
+            registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
             Allocation, SyscallAbi,
         },
         api::{SyscallApi, SyscallEncodable},
-        decoder::SyscallDecoder,
-        encoder::SyscallEncoder,
+        encoder::{DecodeError, EncodePrimitive, SyscallEncoder},
+        error::SyscallError,
         syscall_api,
         table::SyscallTable,
     };
@@ -67,6 +66,9 @@ mod test {
 
     impl<'s, RegisterType: Copy + Default, const NR_REGS: usize> SyscallAbi
         for NullAbi<RegisterType, NR_REGS>
+    where
+        RegisterType: From<u8>,
+        RegisterType: TryInto<u8>,
     {
         type SyscallArgType = RegisterAndStackData<RegisterType, NR_REGS>;
 
@@ -74,16 +76,10 @@ mod test {
 
         type SyscallNumType = u64;
 
-        type ArgEncoder<'a> = RegistersAndStackEncoder<'a, Self,  NR_REGS>
+        type ArgEncoder<'a> = RegistersAndStackEncoder<'a, Self, RegisterType, NR_REGS>
         where
             Self: 'a;
-        type ArgDecoder<'a> = RegistersAndStackDecoder<'a, Self,  NR_REGS>
-        where
-            Self: 'a;
-        type RetEncoder<'a> = RegistersAndStackEncoder<'a, Self,  NR_REGS>
-        where
-            Self: 'a;
-        type RetDecoder<'a> = RegistersAndStackDecoder<'a, Self,  NR_REGS>
+        type RetEncoder<'a> = RegistersAndStackEncoder<'a, Self, RegisterType, NR_REGS>
         where
             Self: 'a;
 
@@ -93,13 +89,17 @@ mod test {
             f: F,
         ) -> Result<R, crate::error::SyscallError<E>>
         where
-            F: FnOnce(&Self, crate::abi::Allocation) -> Result<R, crate::error::SyscallError<E>>,
+            F: FnOnce(crate::abi::Allocation) -> Result<R, crate::error::SyscallError<E>>,
         {
             // TODO: fix layout
             alloca::with_alloca_zeroed(layout.size(), |ptr| {
                 let alloc = ptr.into();
-                f(self, alloc)
+                f(alloc)
             })
+        }
+
+        fn kernel_alloc(&self, _layout: Layout) -> Allocation {
+            Allocation::null()
         }
 
         fn syscall_impl(
@@ -111,7 +111,21 @@ mod test {
             self.rx.lock().unwrap().recv().unwrap()
         }
 
-        type Primitive = RegisterType;
+        fn arg_encoder<'a>(&'a self) -> Self::ArgEncoder<'a> {
+            Self::ArgEncoder::new(self, None)
+        }
+
+        fn arg_decoder<'a>(&'a self, data: Self::SyscallArgType) -> Self::ArgEncoder<'a> {
+            Self::ArgEncoder::new(self, Some(data))
+        }
+
+        fn ret_encoder<'a>(&'a self) -> Self::RetEncoder<'a> {
+            Self::RetEncoder::new(self, None)
+        }
+
+        fn ret_decoder<'a>(&'a self, data: Self::SyscallRetType) -> Self::RetEncoder<'a> {
+            Self::RetEncoder::new(self, Some(data))
+        }
     }
 
     #[test]
@@ -122,35 +136,34 @@ mod test {
             y: u32,
         }
 
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
         struct FooRet {
             a: u32,
             b: u32,
         }
 
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
         enum FooErr {
             Sad,
         }
 
-        impl<Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
-            SyscallEncodable<Abi, RegisterAndStackData<RegisterType, NR_REGS>> for Foo
+        impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
+            SyscallEncodable<
+                'a,
+                Abi,
+                RegisterAndStackData<RegisterType, NR_REGS>,
+                Abi::ArgEncoder<'a>,
+            > for Foo
         where
-            Abi: SyscallAbi<Primitive = RegisterType>,
             RegisterType: From<u32>,
             RegisterType: TryInto<u32>,
             u32: TryFrom<RegisterType>,
+            <Abi as SyscallAbi>::ArgEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
         {
-            fn encode<
-                'a,
-                Encoder: crate::encoder::SyscallEncoder<
-                    'a,
-                    Abi,
-                    RegisterAndStackData<RegisterType, NR_REGS>,
-                >,
-            >(
+            fn encode(
                 &self,
-                encoder: &mut Encoder,
+                encoder: &mut Abi::ArgEncoder<'a>,
                 alloc: &Allocation,
             ) -> Result<(), crate::encoder::EncodeError> {
                 self.x.encode(encoder, alloc)?;
@@ -158,16 +171,7 @@ mod test {
                 Ok(())
             }
 
-            fn decode<
-                'a,
-                Decoder: crate::decoder::SyscallDecoder<
-                    'a,
-                    Abi,
-                    RegisterAndStackData<RegisterType, NR_REGS>,
-                >,
-            >(
-                decoder: &mut Decoder,
-            ) -> Result<Self, crate::decoder::DecodeError>
+            fn decode(decoder: &mut Abi::ArgEncoder<'a>) -> Result<Self, DecodeError>
             where
                 Self: Sized,
             {
@@ -178,24 +182,23 @@ mod test {
             }
         }
 
-        impl<Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
-            SyscallEncodable<Abi, RegisterAndStackData<RegisterType, NR_REGS>> for FooRet
+        impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
+            SyscallEncodable<
+                'a,
+                Abi,
+                RegisterAndStackData<RegisterType, NR_REGS>,
+                Abi::RetEncoder<'a>,
+            > for FooRet
         where
-            Abi: SyscallAbi<Primitive = RegisterType>,
             RegisterType: From<u32>,
             RegisterType: TryInto<u32>,
             u32: TryFrom<RegisterType>,
+            <Abi as SyscallAbi>::RetEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
         {
-            fn encode<
-                'a,
-                Encoder: crate::encoder::SyscallEncoder<
-                    'a,
-                    Abi,
-                    RegisterAndStackData<RegisterType, NR_REGS>,
-                >,
-            >(
+            fn encode(
                 &self,
-                encoder: &mut Encoder,
+                encoder: &mut Abi::RetEncoder<'a>,
                 alloc: &Allocation,
             ) -> Result<(), crate::encoder::EncodeError> {
                 self.a.encode(encoder, alloc)?;
@@ -203,16 +206,7 @@ mod test {
                 Ok(())
             }
 
-            fn decode<
-                'a,
-                Decoder: crate::decoder::SyscallDecoder<
-                    'a,
-                    Abi,
-                    RegisterAndStackData<RegisterType, NR_REGS>,
-                >,
-            >(
-                decoder: &mut Decoder,
-            ) -> Result<Self, crate::decoder::DecodeError>
+            fn decode(decoder: &mut Abi::RetEncoder<'a>) -> Result<Self, DecodeError>
             where
                 Self: Sized,
             {
@@ -222,15 +216,50 @@ mod test {
                 })
             }
         }
-        impl<Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize> SyscallApi<Abi> for Foo
+
+        impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
+            SyscallEncodable<
+                'a,
+                Abi,
+                RegisterAndStackData<RegisterType, NR_REGS>,
+                Abi::RetEncoder<'a>,
+            > for FooErr
+        where
+            RegisterType: From<u32>,
+            RegisterType: TryInto<u32>,
+            u32: TryFrom<RegisterType>,
+            <Abi as SyscallAbi>::RetEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
+        {
+            fn encode(
+                &self,
+                encoder: &mut Abi::RetEncoder<'a>,
+                alloc: &Allocation,
+            ) -> Result<(), crate::encoder::EncodeError> {
+                Ok(())
+            }
+
+            fn decode(decoder: &mut Abi::RetEncoder<'a>) -> Result<Self, DecodeError>
+            where
+                Self: Sized,
+            {
+                Ok(FooErr::Sad)
+            }
+        }
+        impl<'a, Abi: SyscallAbi + 'a, RegisterType: Copy + Default, const NR_REGS: usize>
+            SyscallApi<'a, Abi> for Foo
         where
             Abi: SyscallAbi<SyscallNumType = u64>,
             Abi: SyscallAbi<SyscallRetType = RegisterAndStackData<RegisterType, NR_REGS>>,
             Abi: SyscallAbi<SyscallArgType = RegisterAndStackData<RegisterType, NR_REGS>>,
-            Abi: SyscallAbi<Primitive = RegisterType>,
             RegisterType: From<u32>,
             RegisterType: TryInto<u32>,
             u32: TryFrom<RegisterType>,
+            <Abi as SyscallAbi>::ArgEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
+
+            <Abi as SyscallAbi>::RetEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
         {
             type ReturnType = FooRet;
 
@@ -241,7 +270,7 @@ mod test {
 
         let foo = Foo { x: 34, y: 89 };
         let down = std::sync::mpsc::channel();
-        let up = std::sync::mpsc::channel();
+        let up: (std::sync::mpsc::Sender<RegisterAndStackData<u64, 8>>, std::sync::mpsc::Receiver<RegisterAndStackData<u64, 8>>) = std::sync::mpsc::channel();
         let abi = Arc::new(NullAbi::<u64, 8>::new(
             Mutex::new(down.0),
             Mutex::new(up.1),
@@ -250,23 +279,29 @@ mod test {
         ));
         let handler = NullHandler::new(abi.clone());
 
-        impl<Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize> SyscallTable<Abi>
-            for NullHandler<RegisterType, NR_REGS>
+        impl<'a, Abi: SyscallAbi + 'a, RegisterType: Copy + Default, const NR_REGS: usize>
+            SyscallTable<Abi> for NullHandler<RegisterType, NR_REGS>
         where
             Abi: SyscallAbi<SyscallNumType = u64>,
             Abi: SyscallAbi<SyscallArgType = RegisterAndStackData<RegisterType, NR_REGS>>,
             Abi: SyscallAbi<SyscallRetType = RegisterAndStackData<RegisterType, NR_REGS>>,
-            Abi: SyscallAbi<Primitive = RegisterType>,
             RegisterType: From<u32>,
             RegisterType: TryInto<u32>,
+            RegisterType: From<u8>,
+            RegisterType: TryInto<u8>,
+            RegisterType: Debug,
             u32: TryFrom<RegisterType>,
+            <Abi as SyscallAbi>::ArgEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
+            <Abi as SyscallAbi>::RetEncoder<'a>:
+                EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, u32>,
         {
             fn handle_call(
                 &self,
                 num: Abi::SyscallNumType,
                 arg: Abi::SyscallArgType,
             ) -> Abi::SyscallRetType {
-                unsafe {
+                let x = unsafe {
                     syscall_api! {
                         num, arg,
                         NullAbi<RegisterType, NR_REGS>,
@@ -278,7 +313,21 @@ mod test {
                             })
                         })
                     }
-                }
+                };
+
+                let mut encoder = self.abi.ret_encoder();
+                let layout = Layout::new::<
+                    Result<
+                        <Foo as SyscallApi<'a, Abi>>::ReturnType,
+                        SyscallError<<Foo as SyscallApi<'a, Abi>>::ErrorType>,
+                    >,
+                >();
+                let alloc = self.abi.kernel_alloc(layout);
+                // TODO: communicate this error
+                let _ = x.encode(&mut encoder, &alloc);
+                let s = encoder.finish();
+                println!(":: {:?}", s);
+                s
             }
         }
 
@@ -288,12 +337,11 @@ mod test {
                 &handler, num, args,
             );
             handler.abi.ksender.lock().unwrap().send(ret).unwrap();
-            panic!("expr")
         });
 
         let res = foo.perform_call(&*abi);
         thr.join().unwrap();
 
-        panic!("{:?}", res);
+        assert_eq!(res, Ok(FooRet { a: 33, b: 99 }));
     }
 }

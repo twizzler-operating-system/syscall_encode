@@ -12,8 +12,8 @@ macro_rules! syscall_api {
             )*
             _ => todo!()
         };
-        todo!()
 
+        res
     }
     };
 }

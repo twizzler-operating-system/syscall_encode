@@ -1,6 +1,10 @@
-use crate::{decoder::DecodeError, encoder::EncodeError};
+use crate::{
+    abi::SyscallAbi,
+    api::SyscallEncodable,
+    encoder::{DecodeError, EncodeError, EncodePrimitive, SyscallEncoder},
+};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SyscallError<Err: Copy> {
     InvalidData,
     InvalidNum,
@@ -23,5 +27,39 @@ impl<Err: Copy> From<DecodeError> for SyscallError<Err> {
             DecodeError::InvalidData => Self::InvalidData,
             DecodeError::InvalidNum => Self::InvalidNum,
         }
+    }
+}
+
+impl<
+        'a,
+        Err: SyscallEncodable<'a, Abi, EncodedType, Abi::RetEncoder<'a>>,
+        Abi: SyscallAbi,
+        EncodedType: Copy,
+    > SyscallEncodable<'a, Abi, EncodedType, Abi::RetEncoder<'a>> for SyscallError<Err>
+where
+    <Abi as SyscallAbi>::RetEncoder<'a>: SyscallEncoder<'a, Abi, EncodedType>,
+    <Abi as SyscallAbi>::RetEncoder<'a>: EncodePrimitive<'a, Abi, EncodedType, u32>,
+{
+    fn encode(
+        &self,
+        encoder: &mut Abi::RetEncoder<'a>,
+        alloc: &crate::abi::Allocation,
+    ) -> Result<(), EncodeError> {
+        match *self {
+            SyscallError::InvalidData => encoder.encode(&0u32, alloc),
+            SyscallError::InvalidNum => encoder.encode(&1u32, alloc),
+            SyscallError::AllocationError => encoder.encode(&2u32, alloc),
+            SyscallError::SyscallError(e) => {
+                encoder.encode(&3u32, alloc)?;
+                encoder.encode(&e, alloc)
+            }
+        }
+    }
+
+    fn decode(decoder: &mut Abi::RetEncoder<'a>) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }

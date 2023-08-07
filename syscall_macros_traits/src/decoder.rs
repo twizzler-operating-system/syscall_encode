@@ -9,13 +9,4 @@ pub trait SyscallDecoder<'a, Abi: SyscallAbi, EncodedType: Copy> {
         &mut self,
         item: EncodedType,
     ) -> Result<Target, DecodeError>;
-
-    fn decode_primitive<Item: Copy + TryFrom<Abi::Primitive>>(
-        &mut self,
-    ) -> Result<Item, DecodeError>;
-}
-
-pub enum DecodeError {
-    InvalidData,
-    InvalidNum,
 }
