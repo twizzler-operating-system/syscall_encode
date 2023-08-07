@@ -12,12 +12,8 @@ impl<'a, Abi: SyscallAbi, EncodedType: Copy, Encoder>
 where
     Encoder: EncodePrimitive<'a, Abi, EncodedType, Self>,
 {
-    fn encode(
-        &self,
-        encoder: &mut Encoder,
-        alloc: &Allocation,
-    ) -> Result<(), crate::encoder::EncodeError> {
-        encoder.encode_primitive(*self, alloc)
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), crate::encoder::EncodeError> {
+        encoder.encode_primitive(*self)
     }
 
     fn decode(decoder: &mut Encoder) -> Result<Self, DecodeError>
@@ -35,19 +31,15 @@ where
     E: SyscallEncodable<'a, Abi, EncodedType, Encoder> + Copy,
     Encoder: SyscallEncoder<'a, Abi, EncodedType>,
 {
-    fn encode(
-        &self,
-        encoder: &mut Encoder,
-        alloc: &Allocation,
-    ) -> Result<(), crate::encoder::EncodeError> {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), crate::encoder::EncodeError> {
         match self {
             Ok(o) => {
-                encoder.encode_u8(0, alloc)?;
-                o.encode(encoder, alloc)
+                encoder.encode_u8(0)?;
+                o.encode(encoder)
             }
             Err(e) => {
-                encoder.encode_u8(1, alloc)?;
-                e.encode(encoder, alloc)
+                encoder.encode_u8(1)?;
+                e.encode(encoder)
             }
         }
     }

@@ -26,10 +26,18 @@ where
     RegisterType: From<u8>,
     RegisterType: TryInto<u8>,
 {
-    fn new(abi: &'a Abi, data: Option<RegisterAndStackData<RegisterType, NR_REGS>>) -> Self {
+    fn new_decode(abi: &'a Abi, decode_data: RegisterAndStackData<RegisterType, NR_REGS>) -> Self {
         Self {
             abi,
-            regs: data.unwrap_or_default(),
+            regs: decode_data,
+            idx: 0,
+        }
+    }
+
+    fn new_encode(abi: &'a Abi, allocation: Allocation) -> Self {
+        Self {
+            abi,
+            regs: Default::default(),
             idx: 0,
         }
     }
@@ -39,9 +47,8 @@ where
     >(
         &mut self,
         item: &Source,
-        alloc: &Allocation,
     ) -> Result<(), EncodeError> {
-        item.encode(self, alloc)
+        item.encode(self)
     }
 
     fn finish(self) -> RegisterAndStackData<RegisterType, NR_REGS> {
@@ -59,7 +66,7 @@ where
         Target::decode(self)
     }
 
-    fn encode_u8(&mut self, item: u8, alloc: &Allocation) -> Result<(), EncodeError>
+    fn encode_u8(&mut self, item: u8) -> Result<(), EncodeError>
     where
         Self: Sized,
     {
@@ -102,7 +109,7 @@ where
     RegisterType: From<u8>,
     RegisterType: TryInto<u8>,
 {
-    fn encode_primitive(&mut self, item: Primitive, alloc: &Allocation) -> Result<(), EncodeError> {
+    fn encode_primitive(&mut self, item: Primitive) -> Result<(), EncodeError> {
         self.regs.regs[self.idx] = item.try_into().map_err(|_| EncodeError::PrimitiveError)?;
         self.idx += 1;
         Ok(())

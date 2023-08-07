@@ -4,11 +4,11 @@ use crate::{
 };
 
 pub trait SyscallEncoder<'a, Abi: SyscallAbi + ?Sized, EncodedType: Copy> {
-    fn new(abi: &'a Abi, decode_data: Option<EncodedType>) -> Self;
+    fn new_decode(abi: &'a Abi, decode_data: EncodedType) -> Self;
+    fn new_encode(abi: &'a Abi, allocation: Allocation) -> Self;
     fn encode<Source: SyscallEncodable<'a, Abi, EncodedType, Self>>(
         &mut self,
         item: &Source,
-        alloc: &Allocation,
     ) -> Result<(), EncodeError>
     where
         Self: Sized;
@@ -18,7 +18,7 @@ pub trait SyscallEncoder<'a, Abi: SyscallAbi + ?Sized, EncodedType: Copy> {
     where
         Self: Sized;
 
-    fn encode_u8(&mut self, item: u8, alloc: &Allocation) -> Result<(), EncodeError>
+    fn encode_u8(&mut self, item: u8) -> Result<(), EncodeError>
     where
         Self: Sized;
 
@@ -42,7 +42,7 @@ pub enum DecodeError {
 pub trait EncodePrimitive<'a, Abi: SyscallAbi, EncodedType: Copy, Primitive: Copy>:
     SyscallEncoder<'a, Abi, EncodedType>
 {
-    fn encode_primitive(&mut self, item: Primitive, alloc: &Allocation) -> Result<(), EncodeError>;
+    fn encode_primitive(&mut self, item: Primitive) -> Result<(), EncodeError>;
 
     fn decode_primitive(&mut self) -> Result<Primitive, DecodeError>;
 }

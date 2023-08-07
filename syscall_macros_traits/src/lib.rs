@@ -110,22 +110,6 @@ mod test {
             self.sender.lock().unwrap().send((num, args)).unwrap();
             self.rx.lock().unwrap().recv().unwrap()
         }
-
-        fn arg_encoder<'a>(&'a self) -> Self::ArgEncoder<'a> {
-            Self::ArgEncoder::new(self, None)
-        }
-
-        fn arg_decoder<'a>(&'a self, data: Self::SyscallArgType) -> Self::ArgEncoder<'a> {
-            Self::ArgEncoder::new(self, Some(data))
-        }
-
-        fn ret_encoder<'a>(&'a self) -> Self::RetEncoder<'a> {
-            Self::RetEncoder::new(self, None)
-        }
-
-        fn ret_decoder<'a>(&'a self, data: Self::SyscallRetType) -> Self::RetEncoder<'a> {
-            Self::RetEncoder::new(self, Some(data))
-        }
     }
 
     #[test]
@@ -164,10 +148,9 @@ mod test {
             fn encode(
                 &self,
                 encoder: &mut Abi::ArgEncoder<'a>,
-                alloc: &Allocation,
             ) -> Result<(), crate::encoder::EncodeError> {
-                self.x.encode(encoder, alloc)?;
-                self.y.encode(encoder, alloc)?;
+                self.x.encode(encoder)?;
+                self.y.encode(encoder)?;
                 Ok(())
             }
 
@@ -199,10 +182,9 @@ mod test {
             fn encode(
                 &self,
                 encoder: &mut Abi::RetEncoder<'a>,
-                alloc: &Allocation,
             ) -> Result<(), crate::encoder::EncodeError> {
-                self.a.encode(encoder, alloc)?;
-                self.b.encode(encoder, alloc)?;
+                self.a.encode(encoder)?;
+                self.b.encode(encoder)?;
                 Ok(())
             }
 
@@ -234,7 +216,6 @@ mod test {
             fn encode(
                 &self,
                 encoder: &mut Abi::RetEncoder<'a>,
-                alloc: &Allocation,
             ) -> Result<(), crate::encoder::EncodeError> {
                 Ok(())
             }
@@ -270,7 +251,10 @@ mod test {
 
         let foo = Foo { x: 34, y: 89 };
         let down = std::sync::mpsc::channel();
-        let up: (std::sync::mpsc::Sender<RegisterAndStackData<u64, 8>>, std::sync::mpsc::Receiver<RegisterAndStackData<u64, 8>>) = std::sync::mpsc::channel();
+        let up: (
+            std::sync::mpsc::Sender<RegisterAndStackData<u64, 8>>,
+            std::sync::mpsc::Receiver<RegisterAndStackData<u64, 8>>,
+        ) = std::sync::mpsc::channel();
         let abi = Arc::new(NullAbi::<u64, 8>::new(
             Mutex::new(down.0),
             Mutex::new(up.1),
@@ -315,7 +299,6 @@ mod test {
                     }
                 };
 
-                let mut encoder = self.abi.ret_encoder();
                 let layout = Layout::new::<
                     Result<
                         <Foo as SyscallApi<'a, Abi>>::ReturnType,
@@ -323,8 +306,10 @@ mod test {
                     >,
                 >();
                 let alloc = self.abi.kernel_alloc(layout);
+                let mut encoder = self.abi.ret_encoder(alloc);
+
                 // TODO: communicate this error
-                let _ = x.encode(&mut encoder, &alloc);
+                let _ = x.encode(&mut encoder);
                 let s = encoder.finish();
                 println!(":: {:?}", s);
                 s

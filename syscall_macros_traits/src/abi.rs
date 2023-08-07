@@ -26,20 +26,20 @@ pub trait SyscallAbi: Sized {
 
     fn kernel_alloc(&self, layout: Layout) -> Allocation;
 
-    fn arg_encoder<'a>(&'a self) -> Self::ArgEncoder<'a> {
-        Self::ArgEncoder::new(self, None)
+    fn arg_encoder<'a>(&'a self, alloc: Allocation) -> Self::ArgEncoder<'a> {
+        Self::ArgEncoder::new_encode(self, alloc)
     }
 
     fn arg_decoder<'a>(&'a self, data: Self::SyscallArgType) -> Self::ArgEncoder<'a> {
-        Self::ArgEncoder::new(self, Some(data))
+        Self::ArgEncoder::new_decode(self, data)
     }
 
-    fn ret_encoder<'a>(&'a self) -> Self::RetEncoder<'a> {
-        Self::RetEncoder::new(self, None)
+    fn ret_encoder<'a>(&'a self, alloc: Allocation) -> Self::RetEncoder<'a> {
+        Self::RetEncoder::new_encode(self, alloc)
     }
 
     fn ret_decoder<'a>(&'a self, data: Self::SyscallRetType) -> Self::RetEncoder<'a> {
-        Self::RetEncoder::new(self, Some(data))
+        Self::RetEncoder::new_decode(self, data)
     }
 
     fn syscall_impl(

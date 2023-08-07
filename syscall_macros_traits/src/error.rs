@@ -40,18 +40,14 @@ where
     <Abi as SyscallAbi>::RetEncoder<'a>: SyscallEncoder<'a, Abi, EncodedType>,
     <Abi as SyscallAbi>::RetEncoder<'a>: EncodePrimitive<'a, Abi, EncodedType, u32>,
 {
-    fn encode(
-        &self,
-        encoder: &mut Abi::RetEncoder<'a>,
-        alloc: &crate::abi::Allocation,
-    ) -> Result<(), EncodeError> {
+    fn encode(&self, encoder: &mut Abi::RetEncoder<'a>) -> Result<(), EncodeError> {
         match *self {
-            SyscallError::InvalidData => encoder.encode(&0u32, alloc),
-            SyscallError::InvalidNum => encoder.encode(&1u32, alloc),
-            SyscallError::AllocationError => encoder.encode(&2u32, alloc),
+            SyscallError::InvalidData => encoder.encode(&0u32),
+            SyscallError::InvalidNum => encoder.encode(&1u32),
+            SyscallError::AllocationError => encoder.encode(&2u32),
             SyscallError::SyscallError(e) => {
-                encoder.encode(&3u32, alloc)?;
-                encoder.encode(&e, alloc)
+                encoder.encode(&3u32)?;
+                encoder.encode(&e)
             }
         }
     }
