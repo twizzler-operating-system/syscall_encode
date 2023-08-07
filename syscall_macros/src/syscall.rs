@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, spanned::Spanned};
-use syn::{Attribute, DataEnum, DataStruct, DeriveInput, Error, Type};
+use syn::{Attribute, DataEnum, DataStruct, DeriveInput, Error, Type, Generics, LifetimeParam, Lifetime, TypeParam, TypeParamBound, TraitBound, parse_quote};
 
 struct SyscallInfo {
     regs: usize,
@@ -103,18 +103,18 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     let DeriveInput {
         ident: struct_name_ident,
         data,
-        generics,
+        mut generics,
         attrs,
         ..
     } = input;
 
-    let where_clause = &generics.where_clause;
+    //let where_clause = &generics.where_clause;
     let sysinfo = extract_outer_attrs(span, attrs)?;
 
     //let required_trait_bounds = vec!["core::default::Default", "core::fmt::Debug"];
     let streams = match &data {
         syn::Data::Struct(st) => handle_struct(span, st, &sysinfo),
-        syn::Data::Enum(en) => handle_enum(span, en, &sysinfo),
+        syn::Data::Enum(en) => handle_enum(span, struct_name_ident.clone(), en, &sysinfo),
         syn::Data::Union(_) => todo!(),
     }?;
 
@@ -134,15 +134,51 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     let encode_stream = streams.0;
     let decode_stream = streams.1;
 
+    use syn::spanned::Spanned;
+    let struct_generics = generics.clone();
+
+    
+    let abi_life = Lifetime::new("'abi", generics.span());      
+    let abi_gt: TypeParam = Ident::new("Abi", generics.span()).into();    
+    let syscall_abi_tb: TraitBound = parse_quote!(::syscall_macros_traits::abi::SyscallAbi);
+    let mut abi_gtb = abi_gt.clone();
+    let encoder_gtb: TypeParam = parse_quote!(Encoder: ::syscall_macros_traits::encoder::SyscallEncoder<'abi, Abi, EncodedType> + ::syscall_macros_traits::api::impls::EncodeAllPrimitives<'abi, Abi, EncodedType, Encoder>);
+    let encoder_gt: TypeParam = parse_quote!(Encoder);
+    let encoded_type_gtb: TypeParam = parse_quote!(EncodedType: Copy);
+    let encoded_type_gt: TypeParam = parse_quote!(EncodedType);
+
+    abi_gtb.bounds.push(TypeParamBound::Lifetime(abi_life.clone()));
+    abi_gtb.bounds.push(TypeParamBound::Trait(syscall_abi_tb));
+
+    let abi_gt = syn::GenericParam::Type(abi_gt);
+
+    let mut ty_generics = Generics::default();
+    
+    ty_generics.params.push(abi_gt.clone());
+    generics.params.push(syn::GenericParam::Type(abi_gtb));
+
+    ty_generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life.clone())));
+    generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life)));
+
+    generics.params.push(encoded_type_gtb.clone().into());
+    ty_generics.params.push(encoded_type_gt.clone().into());
+
+    generics.params.push(encoder_gtb.clone().into());
+    ty_generics.params.push(encoder_gt.clone().into());
+    
+
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    
+    let (_, s_ty_generics, _) = struct_generics.split_for_impl();
+
     Ok(quote! {
-        impl #generics ::syscall_macros_traits::SyscallArguments<#num_bits, #num_regs> for #struct_name_ident #generics #where_clause {
-            type RegisterType = #reg_type;
-            fn encode(&self, encoder: &mut ::syscall_macros_traits::SyscallEncoder<Self::RegisterType, #num_bits, #num_regs>) {
+        impl #impl_generics ::syscall_macros_traits::api::SyscallEncodable #ty_generics for #struct_name_ident #s_ty_generics #where_clause {
+            fn encode(&self, encoder: &mut Encoder) -> Result<(), ::syscall_macros_traits::encoder::EncodeError> {
                 encoder.size_hint(core::mem::size_of::<Self>());
                 #encode_stream
             }
 
-            fn decode(decoder: &mut ::syscall_macros_traits::SyscallDecoder<Self::RegisterType, #num_bits, #num_regs>) -> Result<Self, ::syscall_macros_traits::DecodeError> where Self: Sized {
+            fn decode(decoder: &mut Encoder) -> Result<Self, ::syscall_macros_traits::encoder::DecodeError> where Self: Sized {
                 #decode_stream
             }
         }
@@ -152,6 +188,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
 
 fn handle_enum(
     _span: Span,
+    ident: Ident,
     en: &DataEnum,
     info: &SyscallInfo,
 ) -> syn::Result<(TokenStream, TokenStream)> {
@@ -209,7 +246,10 @@ fn handle_enum(
                 }
             })
             .collect();
-        quote! {match self {#(#internal)*}}
+        if internal.is_empty() {
+            quote! {Ok(())}
+        } else {        quote! {match self {#(#internal)*}; Ok(())}
+    }
     };
 
     let decode = {
@@ -267,13 +307,17 @@ fn handle_enum(
                 }
             })
             .collect();
-        quote! {
+        if internal.is_empty() {
+            quote!{Ok(#ident)}
+        } else {
+                    quote! {
             let disc = u64::decode(decoder)?;
             Ok(match disc {
                 #(#internal)*
-                _ => return Err(::syscall_macros_traits::DecodeError::InvalidData)
+                _ => return Err(::syscall_macros_traits::encoder::DecodeError::InvalidData)
             })
         }
+    }
     };
 
     Ok((encode, decode))
@@ -283,8 +327,8 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
     for f in &st.fields {
         check_ty_allowed(f.ty.__span(), &f.ty)?;
     }
-    let SyscallInfo { reg_bits, regs } = info.clone();
-    let encode = st
+    //let SyscallInfo { reg_bits, regs } = info.clone();
+    let mut encode:Vec<_> = st
         .fields
         .iter()
         .enumerate()
@@ -293,11 +337,11 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
             match field.ident.as_ref() {
                 Some(name) => {
                     quote! {
-                        self.#name.encode(encoder);
+                        self.#name.encode(encoder)?;
                     }
                 }
                 None => quote! {
-                    self.#num.encode(encoder);
+                    self.#num.encode(encoder)?;
                 },
             }
         })
@@ -311,7 +355,7 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
                 .map(|field| {
                     let name = field.ident.as_ref().unwrap();
                     let ty = &field.ty;
-                    quote! {#name : <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?}
+                    quote! {#name : <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self{#(#internal),*})}
@@ -323,7 +367,7 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
                 .enumerate()
                 .map(|(_num, field)| {
                     let ty = &field.ty;
-                    quote! {<#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?}
+                    quote! {#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self(#(#internal),*))}
@@ -332,6 +376,8 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
             quote! {Ok(Self{})}
         }
     };
+    encode.push(quote!(Ok(())));
+    let encode = encode.iter().cloned().collect();
 
     Ok((encode, decode))
 }

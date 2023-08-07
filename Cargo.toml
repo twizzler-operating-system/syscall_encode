@@ -8,3 +8,7 @@ edition = "2021"
 [dependencies]
 syscall_macros = { path = "syscall_macros" }
 syscall_macros_traits = { path = "syscall_macros_traits" }
+alloca = "0.3"
+
+[dev-dependencies]
+alloca = "0.3"

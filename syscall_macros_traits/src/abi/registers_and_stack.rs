@@ -1,9 +1,6 @@
-use std::marker::PhantomData;
-
 use crate::{
-    api::SyscallEncodable,
+    api::{impls::EncodeAllPrimitives, SyscallEncodable},
     encoder::{DecodeError, EncodeError, EncodePrimitive, SyscallEncoder},
-    error::SyscallError,
 };
 
 use super::{Allocation, SyscallAbi};
@@ -17,6 +14,7 @@ pub struct RegistersAndStackEncoder<
     abi: &'a Abi,
     idx: usize,
     regs: RegisterAndStackData<RegisterType, NR_REGS>,
+    alloc: Allocation,
 }
 
 impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
@@ -31,6 +29,7 @@ where
             abi,
             regs: decode_data,
             idx: 0,
+            alloc: Allocation::null(),
         }
     }
 
@@ -39,6 +38,7 @@ where
             abi,
             regs: Default::default(),
             idx: 0,
+            alloc: allocation,
         }
     }
 
@@ -100,6 +100,7 @@ impl<R: Copy + Default, const NR_REGS: usize> Default for RegisterAndStackData<R
     }
 }
 
+/*
 impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize, Primitive: Copy>
     EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, Primitive>
     for RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
@@ -121,4 +122,14 @@ where
         self.idx += 1;
         Ok(p)
     }
+}
+*/
+
+impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
+    EncodeAllPrimitives<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, Self>
+    for RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
+where
+    RegisterType: From<u8>,
+    RegisterType: TryInto<u8>,
+{
 }

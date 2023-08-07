@@ -12,6 +12,6 @@ proc-macro = true
 
 [dependencies]
 quote = "*"
-syn = { version = "*", features = ["extra-traits"] }
+syn = { version = "*", features = ["extra-traits", "parsing"] }
 proc-macro2 = "*"
 syscall_macros_traits = { path = "../syscall_macros_traits" }

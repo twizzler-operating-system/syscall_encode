@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     abi::SyscallAbi,
     api::SyscallEncodable,
@@ -38,15 +40,14 @@ impl<
     > SyscallEncodable<'a, Abi, EncodedType, Abi::RetEncoder<'a>> for SyscallError<Err>
 where
     <Abi as SyscallAbi>::RetEncoder<'a>: SyscallEncoder<'a, Abi, EncodedType>,
-    <Abi as SyscallAbi>::RetEncoder<'a>: EncodePrimitive<'a, Abi, EncodedType, u32>,
 {
     fn encode(&self, encoder: &mut Abi::RetEncoder<'a>) -> Result<(), EncodeError> {
         match *self {
-            SyscallError::InvalidData => encoder.encode(&0u32),
-            SyscallError::InvalidNum => encoder.encode(&1u32),
-            SyscallError::AllocationError => encoder.encode(&2u32),
+            SyscallError::InvalidData => encoder.encode(&0u8),
+            SyscallError::InvalidNum => encoder.encode(&1u8),
+            SyscallError::AllocationError => encoder.encode(&2u8),
             SyscallError::SyscallError(e) => {
-                encoder.encode(&3u32)?;
+                encoder.encode(&3u8)?;
                 encoder.encode(&e)
             }
         }
@@ -56,6 +57,13 @@ where
     where
         Self: Sized,
     {
-        todo!()
+        let dis = decoder.decode_u8()?;
+        Ok(match dis {
+            0 => SyscallError::InvalidData,
+            1 => SyscallError::InvalidNum,
+            2 => SyscallError::AllocationError,
+            3 => SyscallError::SyscallError(decoder.decode()?),
+            _ => SyscallError::InvalidData,
+        })
     }
 }

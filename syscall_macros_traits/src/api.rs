@@ -1,7 +1,7 @@
 use std::alloc::Layout;
 
 use crate::{
-    abi::{Allocation, SyscallAbi},
+    abi::SyscallAbi,
     encoder::{DecodeError, EncodeError, SyscallEncoder},
     error::SyscallError,
 };
@@ -27,7 +27,7 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
                 .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
             let args = encoder.finish();
 
-            let result = abi.syscall_impl(Self::NUM, args);
+            let result = unsafe { abi.syscall_impl(Self::NUM, args) };
 
             let mut decoder = abi.ret_decoder(result);
             let result: Result<Self::ReturnType, Self::ErrorType> = decoder

@@ -12,15 +12,8 @@
 // 3. document
 // 4. bench
 
-use syscall_macros::SyscallEncode;
-use syscall_macros_traits::{
-    api::{SyscallApi, SyscallError, SyscallErrorType, SyscallReturn, SyscallReturnType},
-    SyscallArgs,
-};
-
-#[cfg(test)]
+#[cfg(testr)]
 mod test {
-    use syscall_macros_traits::{SyscallArguments, SyscallDecoder, SyscallEncoder, UserPointer};
 
     fn run_through<T>(item: T)
     where
@@ -180,50 +173,177 @@ mod test {
     }
 }
 
-#[derive(Clone, Copy)]
-struct SysRet {
-    x: u64,
-    y: u64,
-}
+//#[cfg(test)]
+mod test {
 
-const BITS: usize = 64;
-const NR_REGS: usize = 6;
-pub fn api(num: u64, args: SyscallArgs<u64, 6>) {
-    #[derive(SyscallEncode, Clone, Copy)]
-    struct Foo;
-    impl SyscallApi<u64, SysRet, BITS, NR_REGS> for Foo {
-        const NUM: u64 = 1;
+    use std::{sync::{Mutex, Arc}, thread::JoinHandle, alloc::Layout};
 
-        type ReturnType = u64;
-        type ReturnErrorType = u64;
+    use syscall_macros::SyscallEncodable;
+    use syscall_macros_traits::{abi::{
+        registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
+        SyscallAbi, Allocation,
+    }, error::SyscallError, table::SyscallTable, api::SyscallApi, syscall_api};
+    const NR_REGS: usize = 6;
+
+    type Register = u64;
+
+    type Encoder<'a> = RegistersAndStackEncoder<'a, NullAbi, Register, NR_REGS>;
+    type EncodedType = RegisterAndStackData<Register, NR_REGS>;
+
+    type Sender<T> = Arc<Mutex<std::sync::mpsc::Sender<T>>>;
+    type Receiver<T> = Arc<Mutex<std::sync::mpsc::Receiver<T>>>;
+
+    struct NullAbi {
+        arg_sender: Sender<(Register, EncodedType)>,
+        ret_sender: Sender<EncodedType>,
+        arg_receiver: Receiver<(Register, EncodedType)>,
+        ret_receiver: Receiver<EncodedType>,
     }
 
-    impl SyscallReturn<u64> for SysRet {
-        unsafe fn decode<Target: SyscallReturnType, Error: SyscallErrorType>(
-            &self,
-        ) -> Result<Target, SyscallError<Error>> {
-            todo!()
-        }
+    impl NullAbi {
+        fn new() -> Self {
+            let (args, argr) = std::sync::mpsc::channel();
+            let (rets, retr) = std::sync::mpsc::channel();
 
-        unsafe fn encode<Target: SyscallReturnType, Error: SyscallErrorType>(
-            _input: Result<Target, SyscallError<Error>>,
-        ) -> Self
+                let arg_sender= Arc::new(Mutex::new(args));
+               let arg_receiver= Arc::new(Mutex::new(argr));
+                let ret_sender= Arc::new(Mutex::new(rets));
+               let  ret_receiver
+               = Arc::new(Mutex::new(retr));          
+               let arg_receiver2 = arg_receiver.clone();
+               let ret_sender2 = ret_sender.clone();
+                Self {
+                    arg_sender,
+                    ret_sender,
+                    arg_receiver,
+                    ret_receiver,
+            }
+        }
+    }
+
+    impl SyscallAbi for NullAbi {
+        type SyscallArgType = EncodedType;
+
+        type SyscallRetType = EncodedType;
+
+        type SyscallNumType = Register;
+
+        type ArgEncoder<'a> 
+        = Encoder<'a>
         where
-            Self: Sized,
+            Self: 'a;
+
+        type RetEncoder<'a>
+        = Encoder<'a>
+        where
+            Self: 'a;
+
+        fn with_alloc<F, R, E: Copy>(
+            &self,
+            layout: std::alloc::Layout,
+            f: F,
+        ) -> Result<R, SyscallError<E>>
+        where
+            F: FnOnce(Allocation) -> Result<R, SyscallError<E>>,
         {
-            todo!()
+            ::alloca::with_alloca_zeroed(layout.size(), |mem| {
+                f(Allocation::from(mem))
+            })
+        }
+
+        fn kernel_alloc(&self, layout: std::alloc::Layout) -> Allocation {
+            Allocation::null()
+        }
+
+        unsafe fn syscall_impl(
+            &self,
+            num: Self::SyscallNumType,
+            args: Self::SyscallArgType,
+        ) -> Self::SyscallRetType {
+            self.arg_sender.lock().unwrap().send((num, args)).unwrap();
+            self.ret_receiver.lock().unwrap().recv().unwrap()
         }
     }
 
-    let _res = unsafe {
-        syscall_macros_traits::syscall_api!(
-            num,
-            args,
-            64,
-            6,
-            u64,
-            SysRet,
-            (Foo, |_num, _args| { Ok::<u64, u64>(83u64) })
-        )
-    };
+
+    struct NullHandler {
+        abi: Arc<NullAbi>
+    }
+    
+        impl<'a>             SyscallTable<NullAbi> for NullHandler
+
+        {
+            fn handle_call(
+                &self,
+                num: Register,
+                arg: EncodedType,
+            ) -> EncodedType {
+                let x = unsafe {
+                    syscall_api! {
+                        num, arg,
+                        NullAbi,
+                        &*self.abi,
+                        (Foo, |_n, _foo| {
+                            println!("::: HERE {:?}", _foo);
+                            Ok(FooRet {
+                            })
+                        })
+                    }
+                };
+
+
+                println!(":: {:?}", x);
+                x
+            }
+        }
+
+
+        
+        #[derive(SyscallEncodable, Clone, Copy, Debug)]
+        struct Foo {
+            x: u8,
+            y: u8,
+        }
+
+        impl<'a> SyscallApi<'a, NullAbi> for Foo {
+            type ReturnType = FooRet;
+
+            const NUM: Register = 1;
+
+            type ErrorType = SimpleErr;
+        }
+
+        #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq)]
+        struct FooRet;
+
+        #[derive(SyscallEncodable, Clone, Copy, Debug)]
+        enum SimpleErr {
+            Sad,
+        }    
+
+
+        
+        #[test]
+    fn basic() {
+
+        let abi = Arc::new(NullAbi::new());
+        let abi2 = abi.clone();
+        let arg_receiver2 = abi.arg_receiver.clone();
+        let ret_sender2 = abi.ret_sender.clone();
+
+        let thr = std::thread::spawn(move || {
+                let (num, args) = arg_receiver2.lock().unwrap().recv().unwrap();
+
+                let handler = NullHandler { abi: abi2  };
+            let ret = <NullHandler as SyscallTable<NullAbi>>::handle_call(
+                &handler, num, args,
+            );
+            handler.abi.ret_sender.lock().unwrap().send(ret).unwrap();            
+           });        
+
+        let foo = Foo { x: 11, y: 33 };
+        let res = foo.perform_call(&abi).unwrap();
+        assert_eq!(res, FooRet);
+        
+           }
 }

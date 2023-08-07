@@ -6,6 +6,7 @@ use crate::{
 pub trait SyscallEncoder<'a, Abi: SyscallAbi + ?Sized, EncodedType: Copy> {
     fn new_decode(abi: &'a Abi, decode_data: EncodedType) -> Self;
     fn new_encode(abi: &'a Abi, allocation: Allocation) -> Self;
+    fn size_hint(&mut self, _size: usize) {}
     fn encode<Source: SyscallEncodable<'a, Abi, EncodedType, Self>>(
         &mut self,
         item: &Source,

@@ -1,17 +1,17 @@
-mod abi;
-mod api;
+pub mod abi;
+pub mod api;
+#[cfg(test)]
+mod test;
 //mod decoder;
-mod encoder;
-mod error;
-mod table;
+pub mod encoder;
+pub mod error;
+pub mod table;
 
 #[cfg(test)]
-mod test {
+mod testr {
     use std::{
         alloc::Layout,
         fmt::Debug,
-        fs::hard_link,
-        marker::PhantomData,
         sync::{Arc, Mutex},
     };
 
@@ -102,7 +102,7 @@ mod test {
             Allocation::null()
         }
 
-        fn syscall_impl(
+        unsafe fn syscall_impl(
             &self,
             num: Self::SyscallNumType,
             args: Self::SyscallArgType,
@@ -298,21 +298,7 @@ mod test {
                         })
                     }
                 };
-
-                let layout = Layout::new::<
-                    Result<
-                        <Foo as SyscallApi<'a, Abi>>::ReturnType,
-                        SyscallError<<Foo as SyscallApi<'a, Abi>>::ErrorType>,
-                    >,
-                >();
-                let alloc = self.abi.kernel_alloc(layout);
-                let mut encoder = self.abi.ret_encoder(alloc);
-
-                // TODO: communicate this error
-                let _ = x.encode(&mut encoder);
-                let s = encoder.finish();
-                println!(":: {:?}", s);
-                s
+                x
             }
         }
 

@@ -1,13 +1,9 @@
 use core::alloc::Layout;
-use std::{default, ptr::null_mut};
+use core::ptr::null_mut;
 
 use crate::{encoder::SyscallEncoder, error::SyscallError};
 
 pub mod registers_and_stack;
-
-pub enum AllocationError {
-    OutOfMemory,
-}
 
 pub trait SyscallAbi: Sized {
     type SyscallArgType: Copy;
@@ -42,7 +38,7 @@ pub trait SyscallAbi: Sized {
         Self::RetEncoder::new_decode(self, data)
     }
 
-    fn syscall_impl(
+    unsafe fn syscall_impl(
         &self,
         num: Self::SyscallNumType,
         args: Self::SyscallArgType,
@@ -64,6 +60,10 @@ impl Allocation {
             data: null_mut(),
             size: 0,
         }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.data.is_null()
     }
 }
 
