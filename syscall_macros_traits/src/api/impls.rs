@@ -1,6 +1,6 @@
 use crate::{
     abi::SyscallAbi,
-    encoder::{DecodeError, EncodePrimitive, SyscallEncoder},
+    encoder::{DecodeError, SyscallEncoder},
 };
 
 use super::SyscallEncodable;
@@ -126,6 +126,35 @@ where
         Ok(match dis {
             0 => Ok(T::decode(decoder)?),
             1 => Err(E::decode(decoder)?),
+            _ => return Err(DecodeError::InvalidData),
+        })
+    }
+}
+
+impl<'a, T, Abi: SyscallAbi, EncodedType: Copy, Encoder>
+    SyscallEncodable<'a, Abi, EncodedType, Encoder> for Option<T>
+where
+    T: SyscallEncodable<'a, Abi, EncodedType, Encoder> + Copy,
+    Encoder: SyscallEncoder<'a, Abi, EncodedType>,
+{
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), crate::encoder::EncodeError> {
+        match self {
+            Some(o) => {
+                encoder.encode_u8(1)?;
+                o.encode(encoder)
+            }
+            None => encoder.encode_u8(0),
+        }
+    }
+
+    fn decode(decoder: &mut Encoder) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        let dis = decoder.decode_u8()?;
+        Ok(match dis {
+            0 => None,
+            1 => Some(T::decode(decoder)?),
             _ => return Err(DecodeError::InvalidData),
         })
     }

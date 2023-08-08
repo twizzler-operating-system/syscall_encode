@@ -1,3 +1,5 @@
+#![feature(strict_provenance)]
+
 pub mod abi;
 pub mod api;
 pub mod encoder;

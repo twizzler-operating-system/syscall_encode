@@ -8,9 +8,12 @@
 // TODO:
 // 0: cleanup
 // 1: finish table API
-// 2: return API
 // 3. document
 // 4. bench
+
+#![allow(soft_unstable)]
+#![feature(test)]
+extern crate test;
 
 #[cfg(testr)]
 mod test {
@@ -173,16 +176,28 @@ mod test {
     }
 }
 
-//#[cfg(test)]
-mod test {
+#[cfg(test)]
+mod tests {
+    use std::{
+        fmt::Debug,
+        process::Termination,
+        sync::{Arc, Mutex},
+    };
 
-    use std::{sync::{Mutex, Arc}, thread::JoinHandle, alloc::Layout};
-
+    use rand::random;
     use syscall_macros::SyscallEncodable;
-    use syscall_macros_traits::{abi::{
-        registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
-        SyscallAbi, Allocation,
-    }, error::SyscallError, table::SyscallTable, api::SyscallApi, syscall_api};
+    use syscall_macros_traits::{
+        abi::{
+            registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
+            Allocation, SyscallAbi,
+        },
+        api::{SyscallApi, SyscallEncodable},
+        encoder::SyscallEncoder,
+        error::SyscallError,
+        syscall_api,
+        table::SyscallTable,
+    };
+    use test::Bencher;
     const NR_REGS: usize = 6;
 
     type Register = u64;
@@ -205,18 +220,15 @@ mod test {
             let (args, argr) = std::sync::mpsc::channel();
             let (rets, retr) = std::sync::mpsc::channel();
 
-                let arg_sender= Arc::new(Mutex::new(args));
-               let arg_receiver= Arc::new(Mutex::new(argr));
-                let ret_sender= Arc::new(Mutex::new(rets));
-               let  ret_receiver
-               = Arc::new(Mutex::new(retr));          
-               let arg_receiver2 = arg_receiver.clone();
-               let ret_sender2 = ret_sender.clone();
-                Self {
-                    arg_sender,
-                    ret_sender,
-                    arg_receiver,
-                    ret_receiver,
+            let arg_sender = Arc::new(Mutex::new(args));
+            let arg_receiver = Arc::new(Mutex::new(argr));
+            let ret_sender = Arc::new(Mutex::new(rets));
+            let ret_receiver = Arc::new(Mutex::new(retr));
+            Self {
+                arg_sender,
+                ret_sender,
+                arg_receiver,
+                ret_receiver,
             }
         }
     }
@@ -228,13 +240,11 @@ mod test {
 
         type SyscallNumType = Register;
 
-        type ArgEncoder<'a> 
-        = Encoder<'a>
+        type ArgEncoder<'a> = Encoder<'a>
         where
             Self: 'a;
 
-        type RetEncoder<'a>
-        = Encoder<'a>
+        type RetEncoder<'a> = Encoder<'a>
         where
             Self: 'a;
 
@@ -246,12 +256,21 @@ mod test {
         where
             F: FnOnce(Allocation) -> Result<R, SyscallError<E>>,
         {
-            ::alloca::with_alloca_zeroed(layout.size(), |mem| {
-                f(Allocation::from(mem))
-            })
+            let mut region = Box::new([0u8; 256]);
+            let ptr = &mut *region as *mut [u8; 256];
+            let _off = ptr.align_offset(layout.align());
+            #[cfg(miri)]
+            let _off = 0;
+            let size = 256 - _off;
+            if size < layout.size() {
+                return Err(SyscallError::AllocationError);
+            }
+            f(Allocation::from(&mut region[_off..(_off + size)]))
+
+            //::alloca::with_alloca_zeroed(layout.size(), |mem| f(Allocation::from(mem)))
         }
 
-        fn kernel_alloc(&self, layout: std::alloc::Layout) -> Allocation {
+        fn kernel_alloc(&self, _layout: std::alloc::Layout) -> Allocation {
             Allocation::null()
         }
 
@@ -265,85 +284,164 @@ mod test {
         }
     }
 
-
     struct NullHandler {
-        abi: Arc<NullAbi>
+        abi: Arc<NullAbi>,
     }
-    
-        impl<'a>             SyscallTable<NullAbi> for NullHandler
-
-        {
-            fn handle_call(
-                &self,
-                num: Register,
-                arg: EncodedType,
-            ) -> EncodedType {
-                let x = unsafe {
-                    syscall_api! {
-                        num, arg,
-                        NullAbi,
-                        &*self.abi,
-                        (Foo, |_n, _foo| {
-                            println!("::: HERE {:?}", _foo);
-                            Ok(FooRet {
-                            })
-                        })
-                    }
-                };
-
-
-                println!(":: {:?}", x);
-                x
+    impl<'a> SyscallTable<NullAbi> for NullHandler {
+        fn handle_call(&self, num: Register, arg: EncodedType) -> EncodedType {
+            unsafe {
+                syscall_api! {
+                    num, arg,
+                    NullAbi,
+                    &*self.abi,
+                    (Foo, |_n, _foo| {
+                        Ok(FooRet { })
+                    })
+                }
             }
         }
+    }
 
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    struct Foo {
+        x: u16,
+        opts1: FooOpts,
+        y: u64,
+        a: Option<u64>,
+        b: u64,
+        u: (),
+        unit: Unit,
+        c: Result<u64, bool>,
+        opts: FooOpts,
+    }
 
-        
-        #[derive(SyscallEncodable, Clone, Copy, Debug)]
-        struct Foo {
-            x: u8,
-            y: u8,
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    enum FooOpts {
+        A,
+        B(u32, bool),
+        C { x: u32, y: u16 },
+    }
+
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    struct FooOpts2(u16, bool);
+
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    struct Unit;
+
+    impl<'a> SyscallApi<'a, NullAbi> for Foo {
+        type ReturnType = FooRet;
+
+        const NUM: Register = 1;
+
+        type ErrorType = SimpleErr;
+    }
+
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq)]
+    struct FooRet;
+
+    #[derive(SyscallEncodable, Clone, Copy, Debug)]
+    enum SimpleErr {
+        Sad,
+    }
+
+    #[cfg(test)]
+    fn test_encode<
+        'a,
+        T: PartialEq + Clone + Copy + Debug + SyscallEncodable<'a, NullAbi, EncodedType, Encoder<'a>>,
+    >(
+        abi: &'a Arc<NullAbi>,
+        item: T,
+    ) {
+        let layout = core::alloc::Layout::new::<T>();
+        abi.with_alloc(layout, |alloc| {
+            let mut encoder = abi.arg_encoder(alloc);
+            item.encode(&mut encoder).unwrap();
+            let encoded = encoder.finish();
+
+            let mut decoder = abi.arg_decoder(encoded);
+            let decoded = T::decode(&mut decoder).unwrap();
+            assert_eq!(decoded, item);
+            Result::<(), SyscallError<()>>::Ok(())
+        })
+        .unwrap();
+    }
+
+    impl Foo {
+        fn new_random() -> Self {
+            Self {
+                x: random(),
+                opts1: if random() {
+                    FooOpts::B(random(), random())
+                } else if random() {
+                    FooOpts::C {
+                        x: random(),
+                        y: random(),
+                    }
+                } else {
+                    FooOpts::A
+                },
+                y: random(),
+                u: (),
+                a: random(),
+                b: random(),
+                unit: Unit,
+                c: if random() {
+                    Ok(random())
+                } else {
+                    Err(random())
+                },
+                opts: if random() {
+                    FooOpts::B(random(), random())
+                } else if random() {
+                    FooOpts::C {
+                        x: random(),
+                        y: random(),
+                    }
+                } else {
+                    FooOpts::A
+                },
+            }
         }
+    }
 
-        impl<'a> SyscallApi<'a, NullAbi> for Foo {
-            type ReturnType = FooRet;
-
-            const NUM: Register = 1;
-
-            type ErrorType = SimpleErr;
-        }
-
-        #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq)]
-        struct FooRet;
-
-        #[derive(SyscallEncodable, Clone, Copy, Debug)]
-        enum SimpleErr {
-            Sad,
-        }    
-
-
-        
-        #[test]
-    fn basic() {
-
+    #[test]
+    fn full() {
         let abi = Arc::new(NullAbi::new());
         let abi2 = abi.clone();
-        let arg_receiver2 = abi.arg_receiver.clone();
-        let ret_sender2 = abi.ret_sender.clone();
 
         let thr = std::thread::spawn(move || {
-                let (num, args) = arg_receiver2.lock().unwrap().recv().unwrap();
+            let handler = NullHandler { abi: abi2 };
+            let (num, args) = handler.abi.arg_receiver.lock().unwrap().recv().unwrap();
 
-                let handler = NullHandler { abi: abi2  };
-            let ret = <NullHandler as SyscallTable<NullAbi>>::handle_call(
-                &handler, num, args,
-            );
-            handler.abi.ret_sender.lock().unwrap().send(ret).unwrap();            
-           });        
+            let ret = <NullHandler as SyscallTable<NullAbi>>::handle_call(&handler, num, args);
+            handler.abi.ret_sender.lock().unwrap().send(ret).unwrap();
+        });
 
-        let foo = Foo { x: 11, y: 33 };
+        let foo = Foo::new_random();
         let res = foo.perform_call(&abi).unwrap();
         assert_eq!(res, FooRet);
-        
-           }
+        thr.join().unwrap();
+    }
+
+    #[test]
+    fn encoding() {
+        let abi = Arc::new(NullAbi::new());
+
+        for _ in 0..100 {
+            let foo = Foo::new_random();
+            test_encode(&abi, foo);
+        }
+    }
+
+    #[bench]
+    fn bench(bencher: &mut Bencher) -> impl Termination {
+        let abi = Arc::new(NullAbi::new());
+        bencher.iter(|| {
+            for _ in 0..1 {
+                let foo = Foo::new_random();
+                test_encode(&abi, foo);
+            }
+        });
+        Ok::<(), ()>(())
+    }
 }

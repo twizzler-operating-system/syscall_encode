@@ -73,11 +73,13 @@ impl Allocation {
         if a_off == usize::MAX {
             return None;
         }
-        self.taken += a_off;
         if self.taken + layout.size() > self.size {
             return None;
         }
-        unsafe { (self.data.add(self.taken) as *mut T).as_mut() }
+        self.taken += a_off;
+        let res = unsafe { (self.data.add(self.taken) as *mut T).as_mut() };
+        self.taken += layout.size();
+        res
     }
 
     pub fn is_null(&self) -> bool {

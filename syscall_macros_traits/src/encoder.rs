@@ -30,11 +30,13 @@ pub trait SyscallEncoder<'a, Abi: SyscallAbi + ?Sized, EncodedType: Copy> {
     fn finish(self) -> EncodedType;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub enum EncodeError {
     AllocationError,
     PrimitiveError,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub enum DecodeError {
     InvalidData,
     InvalidNum,

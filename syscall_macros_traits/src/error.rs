@@ -1,12 +1,10 @@
-use std::fmt::Display;
-
 use crate::{
     abi::SyscallAbi,
     api::SyscallEncodable,
-    encoder::{DecodeError, EncodeError, EncodePrimitive, SyscallEncoder},
+    encoder::{DecodeError, EncodeError, SyscallEncoder},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SyscallError<Err: Copy> {
     InvalidData,
     InvalidNum,

@@ -12,3 +12,4 @@ alloca = "0.3"
 
 [dev-dependencies]
 alloca = "0.3"
+rand = "0.8.5"

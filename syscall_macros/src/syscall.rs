@@ -1,7 +1,8 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, spanned::Spanned};
-use syn::{Attribute, DataEnum, DataStruct, DeriveInput, Error, Type, Generics, LifetimeParam, Lifetime, TypeParam, TypeParamBound, TraitBound, parse_quote};
+use syn::{DataEnum, DataStruct, DeriveInput, Type, Generics, LifetimeParam, Lifetime, TypeParam, TypeParamBound, TraitBound, parse_quote};
 
+/* 
 struct SyscallInfo {
     regs: usize,
     reg_bits: usize,
@@ -81,6 +82,7 @@ fn extract_outer_attrs(fullspan: Span, attrs: Vec<Attribute>) -> syn::Result<Sys
         ))?,
     })
 }
+*/
 
 fn check_ty_allowed(span: Span, ty: &Type) -> Result<(), syn::Error> {
     match ty {
@@ -104,33 +106,20 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
         ident: struct_name_ident,
         data,
         mut generics,
-        attrs,
+        attrs: _attrs,
         ..
     } = input;
 
     //let where_clause = &generics.where_clause;
-    let sysinfo = extract_outer_attrs(span, attrs)?;
+    //let sysinfo = extract_outer_attrs(span, attrs)?;
 
     //let required_trait_bounds = vec!["core::default::Default", "core::fmt::Debug"];
     let streams = match &data {
-        syn::Data::Struct(st) => handle_struct(span, st, &sysinfo),
-        syn::Data::Enum(en) => handle_enum(span, struct_name_ident.clone(), en, &sysinfo),
+        syn::Data::Struct(st) => handle_struct(span, st),
+        syn::Data::Enum(en) => handle_enum(span, struct_name_ident.clone(), en),
         syn::Data::Union(_) => todo!(),
     }?;
 
-    let num_bits = sysinfo.reg_bits;
-    let reg_type = match num_bits {
-        64 => quote! {u64},
-        32 => quote! {u32},
-        128 => quote! {u128},
-        _ => {
-            return Err(Error::new(
-                span,
-                format!("cannot handle register bitwidth of {}", num_bits),
-            ))
-        }
-    };
-    let num_regs = sysinfo.regs;
     let encode_stream = streams.0;
     let decode_stream = streams.1;
 
@@ -190,7 +179,6 @@ fn handle_enum(
     _span: Span,
     ident: Ident,
     en: &DataEnum,
-    info: &SyscallInfo,
 ) -> syn::Result<(TokenStream, TokenStream)> {
     for var in &en.variants {
         for f in &var.fields {
@@ -198,7 +186,6 @@ fn handle_enum(
         }
     } 
                
-    let SyscallInfo { regs, reg_bits } = info;
     let encode = {
         let internal: Vec<_> = en
             .variants
@@ -234,12 +221,12 @@ fn handle_enum(
 
                 let code = names.iter().map(|name| {
                     quote! {
-                        #name.encode(encoder);
+                        #name.encode(encoder)?;
                     }
                 });
                 //let disc = quote!(core::mem::discriminant(self).encode(encoder););
                 let disc = quote! {
-                    {let disc: u64 = #num; disc.encode(encoder);}
+                    {let disc: u64 = #num; disc.encode(encoder)?;}
                 };
                 quote! {
                     Self::#name #structure => {#disc #(#code)*}
@@ -272,7 +259,7 @@ fn handle_enum(
                             let name = field.ident.as_ref().unwrap();
                             let ty = &field.ty;
                             quote!{
-                                let #name = <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?;                            
+                                let #name = <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
                             }
                         }).collect();
                         (names.clone(), quote!({#(#names),*}), code)
@@ -292,7 +279,7 @@ fn handle_enum(
                             let name = ident;
                             let ty = &field.ty;
                             quote!{
-                                let #name = <#ty as ::syscall_macros_traits::SyscallArguments<#reg_bits, #regs>>::decode(decoder)?;                            
+                                let #name = <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
                             }
                         }).collect();                       
                         (names.clone(), quote!((#(#names),*)), code)
@@ -323,7 +310,7 @@ fn handle_enum(
     Ok((encode, decode))
 }
 
-fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Result<(TokenStream, TokenStream)> {
+fn handle_struct(_span: Span, st: &DataStruct) -> syn::Result<(TokenStream, TokenStream)> {
     for f in &st.fields {
         check_ty_allowed(f.ty.__span(), &f.ty)?;
     }
@@ -367,7 +354,7 @@ fn handle_struct(_span: Span, st: &DataStruct, info: &SyscallInfo) -> syn::Resul
                 .enumerate()
                 .map(|(_num, field)| {
                     let ty = &field.ty;
-                    quote! {#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
+                    quote! {<#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self(#(#internal),*))}

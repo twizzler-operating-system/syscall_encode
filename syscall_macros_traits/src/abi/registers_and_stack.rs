@@ -1,8 +1,10 @@
-use std::{fmt::Debug, ops::BitXor};
+#[cfg(miri)]
+use core::ptr::null_mut;
+use core::{fmt::Debug, ops::BitXor};
 
 use crate::{
     api::{impls::EncodeAllPrimitives, SyscallEncodable},
-    encoder::{DecodeError, EncodeError, EncodePrimitive, SyscallEncoder},
+    encoder::{DecodeError, EncodeError, SyscallEncoder},
 };
 
 use super::{Allocation, SyscallAbi};
@@ -13,7 +15,7 @@ pub struct RegistersAndStackEncoder<
     RegisterType: Copy + Default,
     const NR_REGS: usize,
 > {
-    abi: &'a Abi,
+    _abi: &'a Abi,
     idx: usize,
     by: usize,
     regs: RegisterAndStackData<RegisterType, NR_REGS>,
@@ -38,7 +40,7 @@ where
 {
     fn new_decode(abi: &'a Abi, decode_data: RegisterAndStackData<RegisterType, NR_REGS>) -> Self {
         Self {
-            abi,
+            _abi: abi,
             regs: decode_data,
             idx: 0,
             alloc: Allocation::null(),
@@ -48,7 +50,7 @@ where
 
     fn new_encode(abi: &'a Abi, allocation: Allocation) -> Self {
         Self {
-            abi,
+            _abi: abi,
             regs: Default::default(),
             idx: 0,
             alloc: allocation,
@@ -109,6 +111,10 @@ where
                     .map_err(|_| EncodeError::PrimitiveError)?;
                 self.regs.regs[self.idx] =
                     ptr.try_into().map_err(|_| EncodeError::PrimitiveError)?;
+                #[cfg(miri)]
+                {
+                    self.regs.ptr = self.alloc.data;
+                }
             }
             let space = self
                 .alloc
@@ -135,7 +141,10 @@ where
             Ok(item)
         } else {
             let reg: u128 = self.regs.regs[self.idx].into();
-            let base_ptr = reg as usize as *mut u8;
+            #[cfg(miri)]
+            let base_ptr = self.regs.ptr.with_addr(reg as usize);
+            #[cfg(not(miri))]
+            let base_ptr = core::ptr::from_exposed_addr::<u8>(reg as usize);
             let item_ptr = unsafe { base_ptr.add(self.by) };
             self.by += 1;
             Ok(unsafe { *item_ptr })
@@ -146,12 +155,22 @@ where
 #[derive(Debug, Clone, Copy)]
 pub struct RegisterAndStackData<RegisterType: Copy + Default, const NR_REGS: usize> {
     regs: [RegisterType; NR_REGS],
+    #[cfg(miri)]
+    ptr: *const u8,
+}
+
+#[cfg(miri)]
+unsafe impl<RegisterType: Copy + Default, const NR_REGS: usize> Send
+    for RegisterAndStackData<RegisterType, NR_REGS>
+{
 }
 
 impl<R: Copy + Default, const NR_REGS: usize> Default for RegisterAndStackData<R, NR_REGS> {
     fn default() -> Self {
         Self {
             regs: [R::default(); NR_REGS],
+            #[cfg(miri)]
+            ptr: null_mut(),
         }
     }
 }
