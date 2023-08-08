@@ -1,7 +1,7 @@
 //!
 //! # Pointers and References
 //! ```compile_fail
-//! #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
+//! #[derive(syscall_macros::SyscallEncodable, Debug, Clone, Eq, PartialEq, PartialOrd)]
 //! struct Bar<'a> { x: &'a u32 }
 //! ```
 

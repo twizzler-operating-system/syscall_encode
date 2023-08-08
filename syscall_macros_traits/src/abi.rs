@@ -52,6 +52,7 @@ impl AbiRegister for u64 {}
 pub struct Allocation {
     data: *mut u8,
     size: usize,
+    taken: usize,
 }
 
 impl Allocation {
@@ -59,7 +60,24 @@ impl Allocation {
         Self {
             data: null_mut(),
             size: 0,
+            taken: 0,
         }
+    }
+
+    pub fn reserve<T>(&mut self) -> Option<&mut T> {
+        if self.is_null() {
+            return None;
+        }
+        let layout = core::alloc::Layout::new::<T>();
+        let a_off = unsafe { self.data.add(self.taken) }.align_offset(layout.align());
+        if a_off == usize::MAX {
+            return None;
+        }
+        self.taken += a_off;
+        if self.taken + layout.size() > self.size {
+            return None;
+        }
+        unsafe { (self.data.add(self.taken) as *mut T).as_mut() }
     }
 
     pub fn is_null(&self) -> bool {
@@ -72,6 +90,7 @@ impl From<&mut [u8]> for Allocation {
         Self {
             data: value.as_mut_ptr(),
             size: value.len(),
+            taken: 0,
         }
     }
 }

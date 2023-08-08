@@ -1,3 +1,5 @@
+use std::{fmt::Debug, ops::BitXor};
+
 use crate::{
     api::{impls::EncodeAllPrimitives, SyscallEncodable},
     encoder::{DecodeError, EncodeError, EncodePrimitive, SyscallEncoder},
@@ -13,16 +15,26 @@ pub struct RegistersAndStackEncoder<
 > {
     abi: &'a Abi,
     idx: usize,
+    by: usize,
     regs: RegisterAndStackData<RegisterType, NR_REGS>,
     alloc: Allocation,
+}
+
+pub trait AllowedRegisterType: Into<u128> + BitXor<Output = Self> + TryFrom<u128> + Debug {}
+
+impl AllowedRegisterType for u64 {}
+
+impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
+    RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
+{
+    const REG_BYTES: usize = core::mem::size_of::<RegisterType>();
 }
 
 impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
     SyscallEncoder<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>>
     for RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
 where
-    RegisterType: From<u8>,
-    RegisterType: TryInto<u8>,
+    RegisterType: AllowedRegisterType,
 {
     fn new_decode(abi: &'a Abi, decode_data: RegisterAndStackData<RegisterType, NR_REGS>) -> Self {
         Self {
@@ -30,6 +42,7 @@ where
             regs: decode_data,
             idx: 0,
             alloc: Allocation::null(),
+            by: 0,
         }
     }
 
@@ -39,6 +52,7 @@ where
             regs: Default::default(),
             idx: 0,
             alloc: allocation,
+            by: 0,
         }
     }
 
@@ -70,8 +84,38 @@ where
     where
         Self: Sized,
     {
-        self.regs.regs[self.idx] = item.into();
-        self.idx += 1;
+        if self.idx < NR_REGS - 2 {
+            let reg = &mut self.regs.regs[self.idx];
+
+            let maskb = (1u128 << (self.by * 8)).checked_sub(1).unwrap_or_default();
+            let maskt = (1u128 << ((self.by + 1) * 8)) - 1;
+            let mask = maskt ^ maskb;
+            let item = (item as u128) << (self.by * 8);
+            let cur_reg: u128 = (*reg).into();
+
+            *reg = ((item & mask) | (cur_reg & !mask))
+                .try_into()
+                .map_err(|_| EncodeError::PrimitiveError)?;
+
+            self.by += 1;
+            if self.by >= Self::REG_BYTES {
+                self.idx += 1;
+                self.by = 0;
+            }
+        } else {
+            if self.by == 0 {
+                self.by = 0xff;
+                let ptr = u128::try_from(self.alloc.data as usize)
+                    .map_err(|_| EncodeError::PrimitiveError)?;
+                self.regs.regs[self.idx] =
+                    ptr.try_into().map_err(|_| EncodeError::PrimitiveError)?;
+            }
+            let space = self
+                .alloc
+                .reserve::<u8>()
+                .ok_or(EncodeError::AllocationError)?;
+            *space = item;
+        }
         Ok(())
     }
 
@@ -79,11 +123,23 @@ where
     where
         Self: Sized,
     {
-        let p = self.regs.regs[self.idx]
-            .try_into()
-            .map_err(|_| DecodeError::InvalidData)?;
-        self.idx += 1;
-        Ok(p)
+        if self.idx < NR_REGS - 2 {
+            let reg: u128 = self.regs.regs[self.idx].into();
+            let item = reg >> (self.by as u128 * 8);
+            let item = (item & 0xff) as u8;
+            self.by += 1;
+            if self.by >= Self::REG_BYTES {
+                self.idx += 1;
+                self.by = 0;
+            }
+            Ok(item)
+        } else {
+            let reg: u128 = self.regs.regs[self.idx].into();
+            let base_ptr = reg as usize as *mut u8;
+            let item_ptr = unsafe { base_ptr.add(self.by) };
+            self.by += 1;
+            Ok(unsafe { *item_ptr })
+        }
     }
 }
 
@@ -129,7 +185,6 @@ impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
     EncodeAllPrimitives<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, Self>
     for RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
 where
-    RegisterType: From<u8>,
-    RegisterType: TryInto<u8>,
+    RegisterType: AllowedRegisterType,
 {
 }
