@@ -191,7 +191,7 @@ mod tests {
             registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
             Allocation, SyscallAbi,
         },
-        api::{SyscallApi, SyscallEncodable},
+        api::{SyscallApi, SyscallEncodable, SyscallFastApi},
         encoder::SyscallEncoder,
         error::SyscallError,
         syscall_api,
@@ -291,18 +291,27 @@ mod tests {
         fn handle_call(&self, num: Register, arg: EncodedType) -> EncodedType {
             unsafe {
                 syscall_api! {
-                    num, arg,
-                    NullAbi,
-                    &*self.abi,
-                    (Foo, |_n, _foo| {
-                        Ok(FooRet { })
-                    })
+                    number = num;
+                    args = arg;
+                    abi_type = NullAbi;
+                    abi = &*self.abi;
+                    handlers = {
+                        (Foo, |_n, _foo| {
+                            Ok(FooRet { })
+                        })
+                    }
+                    fast_handlers = {
+                        (Bar, |_n, _foo| {
+                            Baz { a: false }
+                        })
+                    }
                 }
             }
         }
     }
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
     struct Foo {
         x: u16,
         opts1: FooOpts,
@@ -315,7 +324,24 @@ mod tests {
         opts: FooOpts,
     }
 
+    impl Default for Foo {
+        fn default() -> Self {
+            Self {
+                x: Default::default(),
+                opts1: FooOpts::A,
+                y: Default::default(),
+                a: Default::default(),
+                b: Default::default(),
+                u: Default::default(),
+                unit: Unit,
+                c: Ok(0),
+                opts: FooOpts::A,
+            }
+        }
+    }
+
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
     enum FooOpts {
         A,
         B(u32, bool),
@@ -323,9 +349,11 @@ mod tests {
     }
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
     struct FooOpts2(u16, bool);
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
     struct Unit;
 
     impl<'a> SyscallApi<'a, NullAbi> for Foo {
@@ -337,9 +365,11 @@ mod tests {
     }
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq)]
+    #[repr(C)]
     struct FooRet;
 
     #[derive(SyscallEncodable, Clone, Copy, Debug)]
+    #[repr(C)]
     enum SimpleErr {
         Sad,
     }
@@ -358,6 +388,8 @@ mod tests {
             item.encode(&mut encoder).unwrap();
             let encoded = encoder.finish();
 
+            core::hint::black_box(encoded);
+
             let mut decoder = abi.arg_decoder(encoded);
             let decoded = T::decode(&mut decoder).unwrap();
             assert_eq!(decoded, item);
@@ -366,6 +398,23 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(test)]
+    fn test_encode_fast<'a, T: PartialEq + Clone + Copy + Debug + SyscallFastApi<'a, NullAbi>>(
+        abi: &'a Arc<NullAbi>,
+        item: T,
+    ) {
+        let layout = core::alloc::Layout::new::<T>();
+        abi.with_alloc(layout, |alloc| {
+            let encoded: EncodedType = item.into();
+
+            core::hint::black_box(encoded);
+
+            let decoded: T = encoded.into();
+            assert_eq!(decoded, item);
+            Result::<(), SyscallError<()>>::Ok(())
+        })
+        .unwrap();
+    }
     impl Foo {
         fn new_random() -> Self {
             Self {
@@ -404,6 +453,53 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    struct Bar {
+        x: u32,
+        y: u32,
+    }
+    struct Baz {
+        a: bool,
+    }
+    impl Into<EncodedType> for Bar {
+        fn into(self) -> EncodedType {
+            EncodedType {
+                regs: [self.x.into(), self.y.into(), 0, 0, 0, 0],
+                ..Default::default()
+            }
+        }
+    }
+    impl From<EncodedType> for Bar {
+        fn from(value: EncodedType) -> Self {
+            Self {
+                x: value.regs[0] as u32,
+                y: value.regs[1] as u32,
+            }
+        }
+    }
+
+    impl From<EncodedType> for Baz {
+        fn from(value: EncodedType) -> Self {
+            Self {
+                a: value.regs[0] != 0,
+            }
+        }
+    }
+    impl Into<EncodedType> for Baz {
+        fn into(self) -> EncodedType {
+            EncodedType {
+                regs: [self.a.into(), 0, 0, 0, 0, 0],
+                ..Default::default()
+            }
+        }
+    }
+
+    impl<'a> SyscallFastApi<'a, NullAbi> for Bar {
+        const NUM: u64 = 2;
+
+        type ReturnType = Baz;
+    }
+
     #[test]
     fn full() {
         let abi = Arc::new(NullAbi::new());
@@ -433,13 +529,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_fast() {
+        let abi = Arc::new(NullAbi::new());
+
+        let abi2 = abi.clone();
+
+        let thr = std::thread::spawn(move || {
+            let handler = NullHandler { abi: abi2 };
+            let (num, args) = handler.abi.arg_receiver.lock().unwrap().recv().unwrap();
+
+            let ret = <NullHandler as SyscallTable<NullAbi>>::handle_call(&handler, num, args);
+            handler.abi.ret_sender.lock().unwrap().send(ret).unwrap();
+        });
+        let bar = Bar { x: 32, y: 1 };
+
+        let _r = bar.perform_call(&*abi);
+
+        thr.join().unwrap();
+    }
+
     #[bench]
     fn bench(bencher: &mut Bencher) -> impl Termination {
         let abi = Arc::new(NullAbi::new());
         bencher.iter(|| {
             for _ in 0..1 {
-                let foo = Foo::new_random();
+                let foo = Foo::default();
                 test_encode(&abi, foo);
+            }
+        });
+        Ok::<(), ()>(())
+    }
+
+    #[bench]
+    fn bench_fast(bencher: &mut Bencher) -> impl Termination {
+        let abi = Arc::new(NullAbi::new());
+        bencher.iter(|| {
+            for _ in 0..1 {
+                let bar = Bar { x: 3, y: 12 };
+                test_encode_fast(&abi, bar);
             }
         });
         Ok::<(), ()>(())

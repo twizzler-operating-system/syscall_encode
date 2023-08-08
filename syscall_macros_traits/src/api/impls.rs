@@ -43,6 +43,8 @@ impl_prim!(i16);
 impl_prim!(i32);
 impl_prim!(i64);
 impl_prim!(i128);
+impl_prim!(usize);
+impl_prim!(isize);
 
 impl<'a, Abi: SyscallAbi, EncodedType: Copy, Encoder>
     SyscallEncodable<'a, Abi, EncodedType, Encoder> for u8
@@ -173,5 +175,7 @@ where
     i32: SyscallEncodable<'a, Abi, EncodedType, Encoder>,
     i64: SyscallEncodable<'a, Abi, EncodedType, Encoder>,
     i128: SyscallEncodable<'a, Abi, EncodedType, Encoder>,
+    u128: SyscallEncodable<'a, Abi, EncodedType, Encoder>,
+    isize: SyscallEncodable<'a, Abi, EncodedType, Encoder>,
 {
 }

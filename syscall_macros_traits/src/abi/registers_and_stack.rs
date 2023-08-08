@@ -25,6 +25,8 @@ pub struct RegistersAndStackEncoder<
 pub trait AllowedRegisterType: Into<u128> + BitXor<Output = Self> + TryFrom<u128> + Debug {}
 
 impl AllowedRegisterType for u64 {}
+impl AllowedRegisterType for u32 {}
+impl AllowedRegisterType for u128 {}
 
 impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
     RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
@@ -154,7 +156,7 @@ where
 
 #[derive(Debug, Clone, Copy)]
 pub struct RegisterAndStackData<RegisterType: Copy + Default, const NR_REGS: usize> {
-    regs: [RegisterType; NR_REGS],
+    pub regs: [RegisterType; NR_REGS],
     #[cfg(miri)]
     ptr: *const u8,
 }
@@ -174,31 +176,6 @@ impl<R: Copy + Default, const NR_REGS: usize> Default for RegisterAndStackData<R
         }
     }
 }
-
-/*
-impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize, Primitive: Copy>
-    EncodePrimitive<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, Primitive>
-    for RegistersAndStackEncoder<'a, Abi, RegisterType, NR_REGS>
-where
-    Primitive: TryInto<RegisterType>,
-    Primitive: TryFrom<RegisterType>,
-    RegisterType: From<u8>,
-    RegisterType: TryInto<u8>,
-{
-    fn encode_primitive(&mut self, item: Primitive) -> Result<(), EncodeError> {
-        self.regs.regs[self.idx] = item.try_into().map_err(|_| EncodeError::PrimitiveError)?;
-        self.idx += 1;
-        Ok(())
-    }
-
-    fn decode_primitive(&mut self) -> Result<Primitive, crate::encoder::DecodeError> {
-        let p = <Primitive as TryFrom<RegisterType>>::try_from(self.regs.regs[self.idx]);
-        let p: Primitive = p.map_err(|_| DecodeError::InvalidData)?;
-        self.idx += 1;
-        Ok(p)
-    }
-}
-*/
 
 impl<'a, Abi: SyscallAbi, RegisterType: Copy + Default, const NR_REGS: usize>
     EncodeAllPrimitives<'a, Abi, RegisterAndStackData<RegisterType, NR_REGS>, Self>

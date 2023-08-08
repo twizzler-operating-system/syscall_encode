@@ -11,8 +11,8 @@ pub mod impls;
 pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
     SyscallEncodable<'a, Abi, Abi::SyscallArgType, Abi::ArgEncoder<'a>>
 {
-    type ReturnType: SyscallEncodable<'a, Abi, Abi::SyscallRetType, Abi::RetEncoder<'a>>;
     const NUM: Abi::SyscallNumType;
+    type ReturnType: SyscallEncodable<'a, Abi, Abi::SyscallRetType, Abi::RetEncoder<'a>>;
     type ErrorType: SyscallEncodable<'a, Abi, Abi::SyscallRetType, Abi::RetEncoder<'a>>;
 
     fn perform_call(
@@ -67,4 +67,17 @@ pub trait SyscallEncodable<
     fn decode(decoder: &mut Encoder) -> Result<Self, DecodeError>
     where
         Self: Sized;
+}
+
+pub trait SyscallFastApi<'a, Abi: SyscallAbi + 'a>:
+    Into<Abi::SyscallArgType> + From<Abi::SyscallArgType>
+{
+    const NUM: Abi::SyscallNumType;
+    type ReturnType: From<Abi::SyscallRetType> + Into<Abi::SyscallRetType>;
+
+    fn perform_call(self, abi: &'a Abi) -> Self::ReturnType {
+        let args: Abi::SyscallArgType = self.into();
+        let ret = unsafe { abi.syscall_impl(Self::NUM, args) };
+        ret.into()
+    }
 }

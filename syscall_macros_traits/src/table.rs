@@ -2,11 +2,17 @@ use crate::abi::SyscallAbi;
 
 #[macro_export]
 macro_rules! syscall_api {
-    ($in_num:expr, $in_args:expr, $abitype:ty, $abi:expr, $(($type:ty, $call:expr)),*) => {
+    (
+        number = $in_num:expr;
+        args = $in_args:expr;
+        abi_type = $abitype:ty;
+        abi = $abi:expr;
+        handlers = { $(($type:ty, $call:expr)),* }
+        fast_handlers = { $(($fasttype:ty, $fastcall:expr)),* }
+    ) => {
         {
-
-    use syscall_macros_traits::encoder::SyscallEncoder;
-    use syscall_macros_traits::api::SyscallEncodable;
+        use syscall_macros_traits::encoder::SyscallEncoder;
+        use syscall_macros_traits::api::SyscallEncodable;
         let res = match $in_num {
             $(
                 <$type as SyscallApi<$abitype>>::NUM => {
@@ -27,6 +33,13 @@ macro_rules! syscall_api {
                     let s = encoder.finish();
                     s
                 },
+            )*
+            $(
+                <$fasttype as SyscallFastApi<$abitype>>::NUM => {
+                    let args: $fasttype = $in_args.into();
+                    let ret = $fastcall(<$fasttype as SyscallFastApi<$abitype>>::NUM, args);
+                    ret.into()
+                }
             )*
             _ => {
                     let layout = core::alloc::Layout::new::<

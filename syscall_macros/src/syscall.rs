@@ -106,9 +106,25 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
         ident: struct_name_ident,
         data,
         mut generics,
-        attrs: _attrs,
+        attrs,
         ..
     } = input;
+
+    let mut has_repr_c = false;
+    for attr in attrs {
+        if attr.path().is_ident("repr") {
+            let repr: Ident = attr.meta.require_list()?.parse_args()?;
+            if repr.to_string() == "C".to_owned() {
+                has_repr_c = true;
+                break;
+            }
+            return Err(syn::Error::new(repr.span(), "SyscallEncodable requires #[repr(C)]."));
+        }
+    }
+
+    if !has_repr_c {
+        return Err(syn::Error::new(span, "SyscallEncodable requires #[repr(C)]."));
+    }
 
     //let where_clause = &generics.where_clause;
     //let sysinfo = extract_outer_attrs(span, attrs)?;
