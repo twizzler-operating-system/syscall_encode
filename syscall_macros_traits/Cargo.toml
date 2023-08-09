@@ -1,7 +1,12 @@
 [package]
-name = "syscall_macros_traits"
+name = "syscall_encode_traits"
 version = "0.1.0"
 edition = "2021"
+description = "Traits and macros to help define a syscall interface for a kernel."
+repository = "https://github.com/twizzler-operating-system/syscall_encode/"
+homepage = "https://github.com/twizzler-operating-system/syscall_encode/"
+license-file = "BSD-3-Clause"
+authors = ["Daniel Bittman <danielbittman1@gmail.com>"]
 
 [dev-dependencies]
 alloca = "0.3"

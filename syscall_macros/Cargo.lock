@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "syscall_macros"
+name = "syscall_encode_macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
