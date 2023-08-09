@@ -86,16 +86,16 @@ fn extract_outer_attrs(fullspan: Span, attrs: Vec<Attribute>) -> syn::Result<Sys
 
 fn check_ty_allowed(span: Span, ty: &Type) -> Result<(), syn::Error> {
     match ty {
-        Type::Ptr(_) => return Err(syn::Error::new(span, "cannot encode a raw pointer into syscall registers. Use a UserPointer instead.")),
-        Type::Reference(_) => return Err(syn::Error::new(span, "cannot encode a reference into syscall registers. Use a UserPointer instead.")),
-        Type::Slice(_) => return Err(syn::Error::new(span, "cannot encode a non-constant size slice into syscall registers.")),
-        Type::TraitObject(_) => return Err(syn::Error::new(span, "cannot encode a trait object into syscall registers.")),     
-        Type::ImplTrait(_) => return Err(syn::Error::new(span, "cannot encode an impl trait into syscall registers.")),
-        Type::Infer(_) => return Err(syn::Error::new(span, "cannot encode an inferred type into syscall registers.")),
-        Type::Macro(_) => return Err(syn::Error::new(span, "macros are not supported in SyscallArguments deriving.")),
-        Type::Never(_) => return Err(syn::Error::new(span, "what part of 'never' was unclear?")),
+        Type::Ptr(_) => Err(syn::Error::new(span, "cannot encode a raw pointer into syscall registers. Use a UserPointer instead.")),
+        Type::Reference(_) => Err(syn::Error::new(span, "cannot encode a reference into syscall registers. Use a UserPointer instead.")),
+        Type::Slice(_) => Err(syn::Error::new(span, "cannot encode a non-constant size slice into syscall registers.")),
+        Type::TraitObject(_) => Err(syn::Error::new(span, "cannot encode a trait object into syscall registers.")),     
+        Type::ImplTrait(_) => Err(syn::Error::new(span, "cannot encode an impl trait into syscall registers.")),
+        Type::Infer(_) => Err(syn::Error::new(span, "cannot encode an inferred type into syscall registers.")),
+        Type::Macro(_) => Err(syn::Error::new(span, "macros are not supported in SyscallArguments deriving.")),
+        Type::Never(_) => Err(syn::Error::new(span, "what part of 'never' was unclear?")),
         Type::Verbatim(_) => {Ok(())},
-        Type::BareFn(_) => return Err(syn::Error::new(span, "cannot encode a bare function into syscall registers.")),           
+        Type::BareFn(_) => Err(syn::Error::new(span, "cannot encode a bare function into syscall registers.")),           
         _ => {Ok(())},
     }
 }
@@ -114,7 +114,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     for attr in attrs {
         if attr.path().is_ident("repr") {
             let repr: Ident = attr.meta.require_list()?.parse_args()?;
-            if repr.to_string() == "C".to_owned() {
+            if repr == *"C" {
                 has_repr_c = true;
                 break;
             }
@@ -159,17 +159,17 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
 
     let mut ty_generics = Generics::default();
     
-    ty_generics.params.push(abi_gt.clone());
+    ty_generics.params.push(abi_gt);
     generics.params.push(syn::GenericParam::Type(abi_gtb));
 
     ty_generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life.clone())));
     generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life)));
 
-    generics.params.push(encoded_type_gtb.clone().into());
-    ty_generics.params.push(encoded_type_gt.clone().into());
+    generics.params.push(encoded_type_gtb.into());
+    ty_generics.params.push(encoded_type_gt.into());
 
-    generics.params.push(encoder_gtb.clone().into());
-    ty_generics.params.push(encoder_gt.clone().into());
+    generics.params.push(encoder_gtb.into());
+    ty_generics.params.push(encoder_gt.into());
     
 
     let (impl_generics, _, where_clause) = generics.split_for_impl();
@@ -187,8 +187,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
                 #decode_stream
             }
         }
-    }
-    .into())
+    })
 }
 
 fn handle_enum(
