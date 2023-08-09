@@ -19,4 +19,4 @@ proc-macro = true
 quote = "1.0"
 syn = { version = "2.0", features = ["extra-traits", "parsing"] }
 proc-macro2 = "1.0"
-syscall_macros_traits = { path = "../syscall_macros_traits" }
+syscall_encode_traits = { path = "../syscall_macros_traits", version = "0.1" }

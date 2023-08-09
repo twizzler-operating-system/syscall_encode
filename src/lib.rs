@@ -25,8 +25,8 @@
 #![feature(test)]
 extern crate test;
 
-pub use syscall_macros::SyscallEncodable;
-pub use syscall_macros_traits::*;
+pub use syscall_encode_macros::SyscallEncodable;
+pub use syscall_encode_traits::*;
 
 pub mod tests {
     use std::{
@@ -34,13 +34,13 @@ pub mod tests {
         sync::{Arc, Mutex},
     };
 
-    #[cfg(test)]
+    #[cfg(all(not(miri), test))]
     use std::mem::size_of;
 
     #[cfg(test)]
     use rand::random;
-    use syscall_macros::SyscallEncodable;
-    use syscall_macros_traits::{
+    use syscall_encode_macros::SyscallEncodable;
+    use syscall_encode_traits::{
         abi::{
             registers_and_stack::{RegisterAndStackData, RegistersAndStackEncoder},
             Allocation, SyscallAbi,
@@ -141,6 +141,18 @@ pub mod tests {
         ) -> Self::SyscallRetType {
             self.arg_sender.lock().unwrap().send((num, args)).unwrap();
             self.ret_receiver.lock().unwrap().recv().unwrap()
+        }
+
+        fn unrecoverable_encoding_failure<
+            'a,
+            EncodedType: Copy,
+            Encoder: SyscallEncoder<'a, Self, EncodedType>,
+            T: SyscallEncodable<'a, Self, EncodedType, Encoder>,
+        >(
+            &self,
+            _item: T,
+        ) {
+            panic!("unrecoverable encoding failure")
         }
     }
 

@@ -8,5 +8,9 @@ homepage = "https://github.com/twizzler-operating-system/syscall_encode/"
 license = "BSD-3-Clause"
 authors = ["Daniel Bittman <danielbittman1@gmail.com>"]
 
+[lib]
+name = "syscall_encode_traits"
+path = "src/lib.rs"
+
 [dev-dependencies]
 alloca = "0.3"

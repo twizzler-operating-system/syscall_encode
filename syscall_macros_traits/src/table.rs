@@ -54,8 +54,8 @@ macro_rules! syscall_api {
         fast_handlers = { $(($fasttype:ty, $fastcall:expr)),* }
     ) => {
         {
-        use syscall_macros_traits::encoder::SyscallEncoder;
-        use syscall_macros_traits::api::SyscallEncodable;
+        use syscall_encode_traits::encoder::SyscallEncoder;
+        use syscall_encode_traits::api::SyscallEncodable;
         let res = match $in_num {
             $(
                 <$type as SyscallApi<$abitype>>::NUM => {
@@ -71,8 +71,9 @@ macro_rules! syscall_api {
                     let alloc = $abi.kernel_alloc(layout);
                     let mut encoder = $abi.ret_encoder(alloc);
 
-                    // TODO: communicate this error
-                    let _ = r.encode(&mut encoder);
+                    if r.encode(&mut encoder).is_err() {
+                        $abi.unrecoverable_encoding_failure(r)
+                    }
                     let s = encoder.finish();
                     s
                 },
@@ -94,9 +95,10 @@ macro_rules! syscall_api {
                     let alloc = $abi.kernel_alloc(layout);
                     let mut encoder = $abi.ret_encoder(alloc);
 
-                    // TODO: communicate this error
                     let e: Result<(), SyscallError<()>> = Err(SyscallError::InvalidNum);
-                    let _ = e.encode(&mut encoder);
+                    if e.encode(&mut encoder).is_err() {
+                        $abi.unrecoverable_encoding_failure(e)
+                    }
                     let s = encoder.finish();
                     s
                }

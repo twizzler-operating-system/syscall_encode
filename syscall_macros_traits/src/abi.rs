@@ -1,7 +1,7 @@
 use core::alloc::Layout;
 use core::ptr::null_mut;
 
-use crate::{encoder::SyscallEncoder, error::SyscallError};
+use crate::{api::SyscallEncodable, encoder::SyscallEncoder, error::SyscallError};
 
 pub mod registers_and_stack;
 
@@ -67,6 +67,16 @@ pub trait SyscallAbi: Sized {
         num: Self::SyscallNumType,
         args: Self::SyscallArgType,
     ) -> Self::SyscallRetType;
+
+    fn unrecoverable_encoding_failure<
+        'a,
+        EncodedType: Copy,
+        Encoder: SyscallEncoder<'a, Self, EncodedType>,
+        T: SyscallEncodable<'a, Self, EncodedType, Encoder>,
+    >(
+        &self,
+        item: T,
+    );
 }
 
 /// An allocation that was performed for storing encoded values.

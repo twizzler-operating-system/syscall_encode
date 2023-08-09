@@ -145,9 +145,9 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     
     let abi_life = Lifetime::new("'abi", generics.span());      
     let abi_gt: TypeParam = Ident::new("Abi", generics.span()).into();    
-    let syscall_abi_tb: TraitBound = parse_quote!(::syscall_macros_traits::abi::SyscallAbi);
+    let syscall_abi_tb: TraitBound = parse_quote!(::syscall_encode_traits::abi::SyscallAbi);
     let mut abi_gtb = abi_gt.clone();
-    let encoder_gtb: TypeParam = parse_quote!(Encoder: ::syscall_macros_traits::encoder::SyscallEncoder<'abi, Abi, EncodedType> + ::syscall_macros_traits::api::impls::EncodeAllPrimitives<'abi, Abi, EncodedType, Encoder>);
+    let encoder_gtb: TypeParam = parse_quote!(Encoder: ::syscall_encode_traits::encoder::SyscallEncoder<'abi, Abi, EncodedType> + ::syscall_encode_traits::api::impls::EncodeAllPrimitives<'abi, Abi, EncodedType, Encoder>);
     let encoder_gt: TypeParam = parse_quote!(Encoder);
     let encoded_type_gtb: TypeParam = parse_quote!(EncodedType: Copy);
     let encoded_type_gt: TypeParam = parse_quote!(EncodedType);
@@ -197,13 +197,13 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     let (_, s_ty_generics, _) = struct_generics.split_for_impl();
 
     Ok(quote! {
-        impl #impl_generics ::syscall_macros_traits::api::SyscallEncodable #ty_generics for #struct_name_ident #s_ty_generics #where_clause {
-            fn encode(&self, encoder: &mut Encoder) -> Result<(), ::syscall_macros_traits::encoder::EncodeError> {
+        impl #impl_generics ::syscall_encode_traits::api::SyscallEncodable #ty_generics for #struct_name_ident #s_ty_generics #where_clause {
+            fn encode(&self, encoder: &mut Encoder) -> Result<(), ::syscall_encode_traits::encoder::EncodeError> {
                 encoder.size_hint(core::mem::size_of::<Self>());
                 #encode_stream
             }
 
-            fn decode(decoder: &mut Encoder) -> Result<Self, ::syscall_macros_traits::encoder::DecodeError> where Self: Sized {
+            fn decode(decoder: &mut Encoder) -> Result<Self, ::syscall_encode_traits::encoder::DecodeError> where Self: Sized {
                 #decode_stream
             }
         }
@@ -294,7 +294,7 @@ fn handle_enum(
                             let name = field.ident.as_ref().unwrap();
                             let ty = &field.ty;
                             quote!{
-                                let #name = <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
+                                let #name = <#ty as ::syscall_encode_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
                             }
                         }).collect();
                         (names.clone(), quote!({#(#names),*}), code)
@@ -314,7 +314,7 @@ fn handle_enum(
                             let name = ident;
                             let ty = &field.ty;
                             quote!{
-                                let #name = <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
+                                let #name = <#ty as ::syscall_encode_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?;                            
                             }
                         }).collect();                       
                         (names.clone(), quote!((#(#names),*)), code)
@@ -336,7 +336,7 @@ fn handle_enum(
             let disc = u64::decode(decoder)?;
             Ok(match disc {
                 #(#internal)*
-                _ => return Err(::syscall_macros_traits::encoder::DecodeError::InvalidData)
+                _ => return Err(::syscall_encode_traits::encoder::DecodeError::InvalidData)
             })
         }
     }
@@ -377,7 +377,7 @@ fn handle_struct(_span: Span, st: &DataStruct) -> syn::Result<(TokenStream, Toke
                 .map(|field| {
                     let name = field.ident.as_ref().unwrap();
                     let ty = &field.ty;
-                    quote! {#name : <#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
+                    quote! {#name : <#ty as ::syscall_encode_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self{#(#internal),*})}
@@ -389,7 +389,7 @@ fn handle_struct(_span: Span, st: &DataStruct) -> syn::Result<(TokenStream, Toke
                 .enumerate()
                 .map(|(_num, field)| {
                     let ty = &field.ty;
-                    quote! {<#ty as ::syscall_macros_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
+                    quote! {<#ty as ::syscall_encode_traits::api::SyscallEncodable<'abi, Abi, EncodedType, Encoder>>::decode(decoder)?}
                 })
                 .collect();
             quote! {Ok(Self(#(#internal),*))}

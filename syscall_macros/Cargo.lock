@@ -38,11 +38,11 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "syscall_macros_traits",
+ "syscall_encode_traits",
 ]
 
 [[package]]
-name = "syscall_macros_traits"
+name = "syscall_encode_traits"
 version = "0.1.0"
 
 [[package]]
