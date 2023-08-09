@@ -7,7 +7,7 @@ fn bench_normal(bencher: &mut Bencher) {
     let abi = Arc::new(NullAbi::default());
     bencher.iter(|| {
         let foo = Foo::default();
-        test_encode(&abi, foo);
+        test_encode(&abi, foo, |_, _| {});
     });
 }
 

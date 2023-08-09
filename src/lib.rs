@@ -35,6 +35,9 @@ pub mod tests {
     };
 
     #[cfg(test)]
+    use std::mem::size_of;
+
+    #[cfg(test)]
     use rand::random;
     use syscall_macros::SyscallEncodable;
     use syscall_macros_traits::{
@@ -407,8 +410,14 @@ pub mod tests {
         let ptr = &8u32;
         let item = PtrTest { ptr: ptr.into() };
         test_encode(&abi, item, |orig, decoded| {
-            let o_ref = orig.ptr.as_ref(|_, _| true);
-            let d_ref = decoded.ptr.as_ref(|_, _| true);
+            let o_ref = orig.ptr.as_ref(|_, len| {
+                assert_eq!(len, size_of::<u32>());
+                true
+            });
+            let d_ref = decoded.ptr.as_ref(|_, len| {
+                assert_eq!(len, size_of::<u32>());
+                true
+            });
             assert_eq!(o_ref, d_ref);
         });
     }
@@ -419,8 +428,14 @@ pub mod tests {
         let ptr = (&[8u32]).as_slice();
         let item = SliceTest { ptr: ptr.into() };
         test_encode(&abi, item, |orig, decoded| {
-            let o_ref = orig.ptr.as_ref(|_, _| true);
-            let d_ref = decoded.ptr.as_ref(|_, _| true);
+            let o_ref = orig.ptr.as_ref(|_, len| {
+                assert_eq!(len, size_of::<u32>() * ptr.len());
+                true
+            });
+            let d_ref = decoded.ptr.as_ref(|_, len| {
+                assert_eq!(len, size_of::<u32>() * ptr.len());
+                true
+            });
             assert_eq!(o_ref, d_ref);
         });
     }
