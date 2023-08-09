@@ -32,7 +32,7 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
             let mut encoder = abi.arg_encoder(alloc);
             encoder
                 .encode(self)
-                .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
+                .map_err(SyscallError::<Self::ErrorType>::from)?;
             let args = encoder.finish();
 
             // Safety: NUM and args go together by definition.
@@ -41,10 +41,9 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
             let mut decoder = abi.ret_decoder(result);
             let result: Result<Self::ReturnType, Self::ErrorType> = decoder
                 .decode()
-                .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
-            result.map_err(|e| SyscallError::SyscallError(e))
+                .map_err(SyscallError::<Self::ErrorType>::from)?;
+            result.map_err(SyscallError::SyscallError)
         })
-        .map_err(move |e| e.into())
     }
 
     /// Used by the table API. You probably don't want to call this directly.
@@ -65,7 +64,7 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
         let mut arg_decoder = abi.arg_decoder(args);
         let me = Self::decode(&mut arg_decoder)?;
         let res = (call)(num, me);
-        res.map_err(|e| SyscallError::SyscallError(e))
+        res.map_err(SyscallError::SyscallError)
     }
 }
 

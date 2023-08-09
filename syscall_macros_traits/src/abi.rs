@@ -37,22 +37,22 @@ pub trait SyscallAbi: Sized {
     unsafe fn kernel_alloc(&self, layout: Layout) -> Allocation;
 
     /// Create a new encoder for arguments.
-    fn arg_encoder<'a>(&'a self, alloc: Allocation) -> Self::ArgEncoder<'a> {
+    fn arg_encoder(&self, alloc: Allocation) -> Self::ArgEncoder<'_> {
         Self::ArgEncoder::new_encode(self, alloc)
     }
 
     /// Create a new decoder for arguments.
-    fn arg_decoder<'a>(&'a self, data: Self::SyscallArgType) -> Self::ArgEncoder<'a> {
+    fn arg_decoder(&self, data: Self::SyscallArgType) -> Self::ArgEncoder<'_> {
         Self::ArgEncoder::new_decode(self, data)
     }
 
     /// Create a new encoder for return values.
-    fn ret_encoder<'a>(&'a self, alloc: Allocation) -> Self::RetEncoder<'a> {
+    fn ret_encoder(&self, alloc: Allocation) -> Self::RetEncoder<'_> {
         Self::RetEncoder::new_encode(self, alloc)
     }
 
     /// Create a new decoder for return values.
-    fn ret_decoder<'a>(&'a self, data: Self::SyscallRetType) -> Self::RetEncoder<'a> {
+    fn ret_decoder(&self, data: Self::SyscallRetType) -> Self::RetEncoder<'_> {
         Self::RetEncoder::new_decode(self, data)
     }
 
