@@ -13,3 +13,11 @@ alloca = "0.3"
 [dev-dependencies]
 alloca = "0.3"
 rand = "0.8.5"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[profile.bench]
+debug = true
+
+[[bench]]
+name = "encode"
+harness = false

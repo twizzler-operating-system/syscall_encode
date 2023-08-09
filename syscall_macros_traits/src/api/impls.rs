@@ -162,6 +162,7 @@ where
     }
 }
 
+/// Indicate that a particular encoder implements all the basic integer types.
 pub trait EncodeAllPrimitives<'a, Abi: SyscallAbi, EncodedType: Copy, Encoder>
 where
     Encoder: SyscallEncoder<'a, Abi, EncodedType>,

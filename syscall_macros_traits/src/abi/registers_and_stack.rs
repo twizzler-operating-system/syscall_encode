@@ -9,6 +9,9 @@ use crate::{
 
 use super::{Allocation, SyscallAbi};
 
+/// A basic encoder that encodes values byte-by-byte into registers, or the stack if we spill over. Somewhat slow,
+/// but can encode all the basic types. Can be configured by the register type (u32, u64, etc) and the number of registers
+/// that can be used as syscall arg registers.
 pub struct RegistersAndStackEncoder<
     'a,
     Abi: SyscallAbi,
@@ -22,6 +25,7 @@ pub struct RegistersAndStackEncoder<
     alloc: Allocation,
 }
 
+/// An allowed register type for the RegistersAndStackEncoder.
 pub trait AllowedRegisterType: Into<u128> + BitXor<Output = Self> + TryFrom<u128> + Debug {}
 
 impl AllowedRegisterType for u64 {}
@@ -155,10 +159,11 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
+/// The syscall arg type that the RegisterAndStackEncoder uses.
 pub struct RegisterAndStackData<RegisterType: Copy + Default, const NR_REGS: usize> {
     pub regs: [RegisterType; NR_REGS],
     #[cfg(miri)]
-    ptr: *const u8,
+    pub ptr: *const u8,
 }
 
 #[cfg(miri)]

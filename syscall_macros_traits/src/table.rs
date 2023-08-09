@@ -1,5 +1,48 @@
 use crate::abi::SyscallAbi;
 
+/// Define the entire syscall table based on types that implement SyscallApi and SyscallFastApi. Also
+/// acts as the match statement for that table, and so takes in the syscall number and args for the syscall
+/// we are handling. For example:
+///
+/// ```{rust}
+/// struct Foo {...};
+/// impl SyscallApi<...> for Foo {
+///     ...
+/// }
+/// struct FastFoo {...};
+/// impl SyscallFastApi<...> for Foo {
+///     ...
+/// }
+///
+/// fn handle(num: NumType, args: ArgType) -> RetType {
+///     let abi = X86Abi::default();
+///     syscall_api! {
+///         // The number of the incoming
+///         number = num;
+///         // The incoming args.
+///         args = args;
+///         // The type of the ABI we are using.
+///         abi_type = X86Abi;
+///         // An instance of that ABI.
+///         abi = abi;
+///         // List of handlers.
+///         handlers = {
+///             (Foo, |num, foo| {
+///                 ...;
+///                 Ok(FooRet{...})
+///             }), ...
+///         }
+///         // List of handlers that use the Fast API.
+///         fast_handlers = {
+///             (FastFoo, |num, foo| {
+///                 ...;
+///                 FastFooRet{...}
+///             }), ...
+///         }
+///     }
+/// }
+/// ```
+///
 #[macro_export]
 macro_rules! syscall_api {
     (
@@ -66,6 +109,7 @@ macro_rules! syscall_api {
     };
 }
 
+/// Defines a function for handling incoming syscalls, before decoding.
 pub trait SyscallTable<Abi: SyscallAbi> {
     fn handle_call(
         &self,

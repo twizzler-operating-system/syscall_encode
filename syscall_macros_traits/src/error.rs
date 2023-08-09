@@ -4,6 +4,9 @@ use crate::{
     encoder::{DecodeError, EncodeError, SyscallEncoder},
 };
 
+/// Error returning from a syscall. SyscallError comes from errors
+/// from the call itself, whereas the other values indicate errors during
+/// encode or decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SyscallError<Err: Copy> {
     InvalidData,

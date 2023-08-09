@@ -8,13 +8,21 @@ use crate::{
 
 pub mod impls;
 
+/// Use this encodable type as a front-facing Syscall API. It will have
+/// a defined number, return, and error type. Once implemented, one may
+/// call the auto implemented perform_call function on a value of the type
+/// implementing this trait.
 pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
     SyscallEncodable<'a, Abi, Abi::SyscallArgType, Abi::ArgEncoder<'a>>
 {
+    /// The number of the syscall. Must be unique.
     const NUM: Abi::SyscallNumType;
+    /// The type returned by this call on success.
     type ReturnType: SyscallEncodable<'a, Abi, Abi::SyscallRetType, Abi::RetEncoder<'a>>;
+    /// The type returned by this call on error.
     type ErrorType: SyscallEncodable<'a, Abi, Abi::SyscallRetType, Abi::RetEncoder<'a>>;
 
+    /// Perform the syscall with the given ABI.
     fn perform_call(
         &self,
         abi: &'a Abi,
@@ -38,6 +46,7 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
         .map_err(move |e| e.into())
     }
 
+    /// Used by the table API. You probably don't want to call this directly.
     unsafe fn with<
         F: FnOnce(Abi::SyscallNumType, Self) -> Result<Self::ReturnType, Self::ErrorType>,
     >(
@@ -56,6 +65,8 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
     }
 }
 
+/// Indicates that a type may be encoded using an encoder, and implements the method for encoding.
+/// May be derived.
 pub trait SyscallEncodable<
     'a,
     Abi: SyscallAbi + ?Sized,
@@ -69,6 +80,8 @@ pub trait SyscallEncodable<
         Self: Sized;
 }
 
+/// For syscalls that need high performance, implement a much faster, but more limited and less ergonomic, encoding method
+/// that allows per-type optimizations for encoding. The perform_call executes the syscall for a value of the type implementing this trait.
 pub trait SyscallFastApi<'a, Abi: SyscallAbi + 'a>:
     Into<Abi::SyscallArgType> + From<Abi::SyscallArgType>
 {

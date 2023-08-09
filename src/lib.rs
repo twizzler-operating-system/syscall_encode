@@ -1,189 +1,43 @@
+//! # Syscall Encode
+//! Type-safe Automatic syscall encoding support.
+//!
+//! The goal of this crate is to supply mechanisms for OS kernels and ABI libraries to define:
+//! 1. Exact syscall ABI semantics, including how arguments are encoded and sent between kernel and userspace: [abi::SyscallAbi].
+//! 2. A method for enabling a type to be encoded into what can be sent via a syscall instruction (according to the defined ABI): [api::SyscallEncodable].
+//! 3. A method for defining such an encodable type as an API endpoint that allows userspace to easily perform syscalls using a type as arguments [api::SyscallApi].
+//! 4. A derive macro that derives the encodable trait [SyscallEncodable].
+//! 5. A trait that provides much lower overhead than the normal encoding, but may be harder to use and more limited [api::SyscallFastApi].
+//! 6. A way to encode pointers to other userland data structures that the kernel can verify before derefencing.
+//!
+//!
+//! More documentation coming...
 //!
 //! # Pointers and References
+//! You cannot encode a pointer or reference directly. Instead, you can use the UserPointer type, which will encode a
+//! reference that is safe to pass to the kernel.
+//!
 //! ```compile_fail
 //! #[derive(syscall_macros::SyscallEncodable, Debug, Clone, Eq, PartialEq, PartialOrd)]
 //! struct Bar<'a> { x: &'a u32 }
 //! ```
 
 // TODO:
-// 0: cleanup
-// 1: finish table API
 // 3. document
-// 4. bench
 
 #![allow(soft_unstable)]
 #![feature(test)]
 extern crate test;
 
-#[cfg(testr)]
-mod test {
+pub use syscall_macros::SyscallEncodable;
+pub use syscall_macros_traits::*;
 
-    fn run_through<T>(item: T)
-    where
-        T: SyscallArguments<64, 6> + core::fmt::Debug + Clone + Eq,
-    {
-        let mut encoder: SyscallEncoder<<T as SyscallArguments<64, 6>>::RegisterType, 64, 6> =
-            SyscallEncoder::default();
-        item.encode(&mut encoder);
-        let args = encoder.finish();
-
-        let mut decoder = SyscallDecoder::new(args);
-        let item2 = T::decode(&mut decoder).unwrap();
-        assert_eq!(item, item2);
-    }
-
-    #[test]
-    fn test_enum() {
-        #[derive(syscall_macros::SyscallEncode, Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        enum Foo {
-            One,
-            Two(u32),
-            Three { x: bool },
-            Four { x: bool, y: u8 },
-            Five(u32, bool),
-        }
-        let foo = Foo::One;
-        run_through(foo);
-
-        let foo = Foo::Two(89);
-        run_through(foo);
-
-        let foo = Foo::Three { x: true };
-        run_through(foo);
-
-        let foo = Foo::Four { x: true, y: 45 };
-        run_through(foo);
-
-        let foo = Foo::Five(120, false);
-        run_through(foo);
-    }
-    #[test]
-    fn test_unit() {
-        {
-            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-            struct Foo;
-            let foo = Foo {};
-            run_through(foo);
-        }
-
-        {
-            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-            struct Foo();
-            let foo = Foo {};
-            run_through(foo);
-        }
-
-        {
-            #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-            struct Foo {}
-            let foo = Foo {};
-            run_through(foo);
-        }
-    }
-
-    #[test]
-    fn test_basic() {
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Foo {
-            x: u32,
-            y: Option<u32>,
-            z: Option<u32>,
-        }
-        let foo = Foo {
-            x: 8,
-            y: Some(9),
-            z: None,
-        };
-        run_through(foo);
-    }
-
-    #[test]
-    fn test_big() {
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Bar(u64, u64, u64, u64, u64, u64, u64, u64);
-
-        let bar = Bar(1, 2, 3, 4, 5, 6, 7, 8);
-        let bar2 = bar.clone();
-        SyscallEncoder::encode_with(bar, |args| {
-            let mut decoder = SyscallDecoder::new(args);
-            let item2 = Bar::decode(&mut decoder).unwrap();
-            assert_eq!(bar2, item2);
-        });
-    }
-
-    #[test]
-    fn test_nameless() {
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Bar(u32);
-
-        run_through(Bar(3));
-    }
-
-    #[test]
-    fn test_refs() {
-        let q: u32 = 0;
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Bar<'a> {
-            x: UserPointer<'a, u32>,
-        }
-        run_through(Bar {
-            x: UserPointer::from(&q),
-        });
-    }
-
-    #[test]
-    fn test_nested() {
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Foo {
-            x: u32,
-            z: bool,
-        }
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Bar(u32, Foo, bool);
-
-        run_through(Bar(3, Foo { x: 9, z: false }, true));
-    }
-
-    #[test]
-    fn test_config() {
-        use syscall_macros_traits::SyscallArguments;
-
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        struct Foo(u32);
-
-        #[derive(syscall_macros::SyscallEncode, Debug, Clone, Eq, PartialEq, PartialOrd)]
-        #[num_regs = 27]
-        #[reg_bits = 64]
-        struct Bar(u32);
-
-        let mut encoder = syscall_macros_traits::SyscallEncoder::default();
-        Foo(0).encode(&mut encoder);
-
-        assert_eq!(
-            encoder.bits(),
-            env!("SYSCALL_ENCODE_DEFAULT_NR_BITS").parse().unwrap()
-        );
-        assert_eq!(
-            encoder.nr_regs(),
-            env!("SYSCALL_ENCODE_DEFAULT_NR_REGS").parse().unwrap()
-        );
-
-        let mut encoder = syscall_macros_traits::SyscallEncoder::default();
-        Bar(0).encode(&mut encoder);
-
-        assert_eq!(encoder.bits(), 64);
-        assert_eq!(encoder.nr_regs(), 27);
-    }
-}
-
-#[cfg(test)]
-mod tests {
+pub mod tests {
     use std::{
         fmt::Debug,
-        process::Termination,
         sync::{Arc, Mutex},
     };
 
+    #[cfg(test)]
     use rand::random;
     use syscall_macros::SyscallEncodable;
     use syscall_macros_traits::{
@@ -197,7 +51,6 @@ mod tests {
         syscall_api,
         table::SyscallTable,
     };
-    use test::Bencher;
     const NR_REGS: usize = 6;
 
     type Register = u64;
@@ -208,7 +61,8 @@ mod tests {
     type Sender<T> = Arc<Mutex<std::sync::mpsc::Sender<T>>>;
     type Receiver<T> = Arc<Mutex<std::sync::mpsc::Receiver<T>>>;
 
-    struct NullAbi {
+    #[allow(dead_code)]
+    pub struct NullAbi {
         arg_sender: Sender<(Register, EncodedType)>,
         ret_sender: Sender<EncodedType>,
         arg_receiver: Receiver<(Register, EncodedType)>,
@@ -216,7 +70,7 @@ mod tests {
     }
 
     impl NullAbi {
-        fn new() -> Self {
+        pub fn new() -> Self {
             let (args, argr) = std::sync::mpsc::channel();
             let (rets, retr) = std::sync::mpsc::channel();
 
@@ -256,21 +110,26 @@ mod tests {
         where
             F: FnOnce(Allocation) -> Result<R, SyscallError<E>>,
         {
-            let mut region = Box::new([0u8; 256]);
-            let ptr = &mut *region as *mut [u8; 256];
-            let _off = ptr.align_offset(layout.align());
             #[cfg(miri)]
-            let _off = 0;
-            let size = 256 - _off;
-            if size < layout.size() {
-                return Err(SyscallError::AllocationError);
-            }
-            f(Allocation::from(&mut region[_off..(_off + size)]))
+            {
+                let mut region = Box::new([0u8; 256]);
+                let ptr = &mut *region as *mut [u8; 256];
+                let _off = ptr.align_offset(layout.align());
 
-            //::alloca::with_alloca_zeroed(layout.size(), |mem| f(Allocation::from(mem)))
+                let _off = 0;
+                let size = 256 - _off;
+                if size < layout.size() {
+                    return Err(SyscallError::AllocationError);
+                }
+                f(Allocation::from(&mut region[_off..(_off + size)]))
+            }
+            #[cfg(not(miri))]
+            {
+                ::alloca::with_alloca_zeroed(layout.size(), |mem| f(Allocation::from(mem)))
+            }
         }
 
-        fn kernel_alloc(&self, _layout: std::alloc::Layout) -> Allocation {
+        unsafe fn kernel_alloc(&self, _layout: std::alloc::Layout) -> Allocation {
             Allocation::null()
         }
 
@@ -312,7 +171,7 @@ mod tests {
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(C)]
-    struct Foo {
+    pub struct Foo {
         x: u16,
         opts1: FooOpts,
         y: u64,
@@ -342,7 +201,7 @@ mod tests {
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(C)]
-    enum FooOpts {
+    pub enum FooOpts {
         A,
         B(u32, bool),
         C { x: u32, y: u16 },
@@ -350,11 +209,11 @@ mod tests {
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(C)]
-    struct FooOpts2(u16, bool);
+    pub struct FooOpts2(u16, bool);
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(C)]
-    struct Unit;
+    pub struct Unit;
 
     impl<'a> SyscallApi<'a, NullAbi> for Foo {
         type ReturnType = FooRet;
@@ -366,16 +225,15 @@ mod tests {
 
     #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq)]
     #[repr(C)]
-    struct FooRet;
+    pub struct FooRet;
 
     #[derive(SyscallEncodable, Clone, Copy, Debug)]
     #[repr(C)]
-    enum SimpleErr {
+    pub enum SimpleErr {
         Sad,
     }
 
-    #[cfg(test)]
-    fn test_encode<
+    pub fn test_encode<
         'a,
         T: PartialEq + Clone + Copy + Debug + SyscallEncodable<'a, NullAbi, EncodedType, Encoder<'a>>,
     >(
@@ -398,23 +256,22 @@ mod tests {
         .unwrap();
     }
 
-    #[cfg(test)]
-    fn test_encode_fast<'a, T: PartialEq + Clone + Copy + Debug + SyscallFastApi<'a, NullAbi>>(
-        abi: &'a Arc<NullAbi>,
+    pub fn test_encode_fast<
+        'a,
+        T: PartialEq + Clone + Copy + Debug + SyscallFastApi<'a, NullAbi>,
+    >(
+        _abi: &'a Arc<NullAbi>,
         item: T,
     ) {
-        let layout = core::alloc::Layout::new::<T>();
-        abi.with_alloc(layout, |alloc| {
-            let encoded: EncodedType = item.into();
+        let encoded: EncodedType = item.into();
 
-            core::hint::black_box(encoded);
+        core::hint::black_box(encoded);
 
-            let decoded: T = encoded.into();
-            assert_eq!(decoded, item);
-            Result::<(), SyscallError<()>>::Ok(())
-        })
-        .unwrap();
+        let decoded: T = encoded.into();
+        assert_eq!(decoded, item);
     }
+
+    #[cfg(test)]
     impl Foo {
         fn new_random() -> Self {
             Self {
@@ -454,11 +311,11 @@ mod tests {
     }
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    struct Bar {
-        x: u32,
-        y: u32,
+    pub struct Bar {
+        pub x: u32,
+        pub y: u32,
     }
-    struct Baz {
+    pub struct Baz {
         a: bool,
     }
     impl Into<EncodedType> for Bar {
@@ -547,29 +404,5 @@ mod tests {
         let _r = bar.perform_call(&*abi);
 
         thr.join().unwrap();
-    }
-
-    #[bench]
-    fn bench(bencher: &mut Bencher) -> impl Termination {
-        let abi = Arc::new(NullAbi::new());
-        bencher.iter(|| {
-            for _ in 0..1 {
-                let foo = Foo::default();
-                test_encode(&abi, foo);
-            }
-        });
-        Ok::<(), ()>(())
-    }
-
-    #[bench]
-    fn bench_fast(bencher: &mut Bencher) -> impl Termination {
-        let abi = Arc::new(NullAbi::new());
-        bencher.iter(|| {
-            for _ in 0..1 {
-                let bar = Bar { x: 3, y: 12 };
-                test_encode_fast(&abi, bar);
-            }
-        });
-        Ok::<(), ()>(())
     }
 }
