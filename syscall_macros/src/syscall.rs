@@ -163,7 +163,7 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     generics.params.push(syn::GenericParam::Type(abi_gtb));
 
     ty_generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life.clone())));
-    generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life)));
+    generics.params.push(syn::GenericParam::Lifetime(LifetimeParam::new(abi_life.clone())));
 
     generics.params.push(encoded_type_gtb.into());
     ty_generics.params.push(encoded_type_gt.into());
@@ -171,6 +171,26 @@ pub fn derive_proc_macro_impl(input: DeriveInput) -> Result<TokenStream, syn::Er
     generics.params.push(encoder_gtb.into());
     ty_generics.params.push(encoder_gt.into());
     
+    for g in generics.lifetimes_mut() {
+        if g.lifetime.to_string() != "'abi" {
+            g.bounds.push(abi_life.clone());
+        }
+    }
+    
+    let lives: Vec<_> = generics.lifetimes_mut().filter_map(|item| {
+        if item.lifetime.to_string() != "'abi" {
+            Some(item.lifetime.clone())
+        } else {None}
+    }).collect();
+        
+    for g in generics.lifetimes_mut() {
+        if g.lifetime.to_string() == "'abi" {
+            for l in lives.into_iter() {
+                g.bounds.push(l);
+            }
+            break;
+        }
+    }
 
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     

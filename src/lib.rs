@@ -45,6 +45,7 @@ pub mod tests {
         api::{SyscallApi, SyscallEncodable, SyscallFastApi},
         encoder::SyscallEncoder,
         error::SyscallError,
+        ptr::{UserPointer, UserSlice},
         syscall_api,
         table::SyscallTable,
     };
@@ -180,6 +181,18 @@ pub mod tests {
         opts: FooOpts,
     }
 
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
+    pub struct PtrTest<'a> {
+        ptr: UserPointer<'a, u32>,
+    }
+
+    #[derive(SyscallEncodable, Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(C)]
+    pub struct SliceTest<'a> {
+        ptr: UserSlice<'a, u32>,
+    }
+
     impl Default for Foo {
         fn default() -> Self {
             Self {
@@ -236,6 +249,7 @@ pub mod tests {
     >(
         abi: &'a Arc<NullAbi>,
         item: T,
+        more_tests: impl FnOnce(T, T),
     ) {
         let layout = core::alloc::Layout::new::<T>();
         abi.with_alloc(layout, |alloc| {
@@ -248,6 +262,7 @@ pub mod tests {
             let mut decoder = abi.arg_decoder(encoded);
             let decoded = T::decode(&mut decoder).unwrap();
             assert_eq!(decoded, item);
+            more_tests(item, decoded);
             Result::<(), SyscallError<()>>::Ok(())
         })
         .unwrap();
@@ -382,8 +397,32 @@ pub mod tests {
 
         for _ in 0..100 {
             let foo = Foo::new_random();
-            test_encode(&abi, foo);
+            test_encode(&abi, foo, |_, _| {});
         }
+    }
+
+    #[test]
+    fn test_user_pointer() {
+        let abi = Arc::new(NullAbi::default());
+        let ptr = &8u32;
+        let item = PtrTest { ptr: ptr.into() };
+        test_encode(&abi, item, |orig, decoded| {
+            let o_ref = orig.ptr.as_ref(|_, _| true);
+            let d_ref = decoded.ptr.as_ref(|_, _| true);
+            assert_eq!(o_ref, d_ref);
+        });
+    }
+
+    #[test]
+    fn test_user_slice() {
+        let abi = Arc::new(NullAbi::default());
+        let ptr = (&[8u32]).as_slice();
+        let item = SliceTest { ptr: ptr.into() };
+        test_encode(&abi, item, |orig, decoded| {
+            let o_ref = orig.ptr.as_ref(|_, _| true);
+            let d_ref = decoded.ptr.as_ref(|_, _| true);
+            assert_eq!(o_ref, d_ref);
+        });
     }
 
     #[test]

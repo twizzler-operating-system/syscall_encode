@@ -1,4 +1,4 @@
-use std::alloc::Layout;
+use core::alloc::Layout;
 
 use crate::{
     abi::SyscallAbi,
