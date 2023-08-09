@@ -320,7 +320,7 @@ pub mod tests {
             Self {
                 regs: [value.x.into(), value.y.into(), 0, 0, 0, 0],
                 #[cfg(miri)]
-                ptr: Default::default(),
+                ptr: core::ptr::null(),
             }
         }
     }
@@ -346,7 +346,7 @@ pub mod tests {
             Self {
                 regs: [value.a.into(), 0, 0, 0, 0, 0],
                 #[cfg(miri)]
-                ptr: Default::default(),
+                ptr: core::ptr::null(),
             }
         }
     }
