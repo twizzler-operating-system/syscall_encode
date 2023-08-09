@@ -87,19 +87,22 @@ impl Allocation {
     }
 
     /// Allocate some memory.
-    pub fn reserve<T>(&mut self) -> Option<&mut T> {
+    pub fn reserve<T: Copy>(&mut self) -> Option<&mut T> {
         if self.is_null() {
             return None;
         }
         let layout = core::alloc::Layout::new::<T>();
+        // Safety: we meet the stated requirements of add(), since taken will never exceed size.
         let a_off = unsafe { self.data.add(self.taken) }.align_offset(layout.align());
         if a_off == usize::MAX {
             return None;
         }
+        self.taken += a_off;
         if self.taken + layout.size() > self.size {
             return None;
         }
-        self.taken += a_off;
+        // Safety: again, taken will never exceed size, nor will taken + layout.size() ever exceed size.
+        // The cast is safe as well, since we manually aligned above.
         let res = unsafe { (self.data.add(self.taken) as *mut T).as_mut() };
         self.taken += layout.size();
         res

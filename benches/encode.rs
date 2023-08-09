@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use syscall_encode::tests::{test_encode, test_encode_fast, Bar, Foo, NullAbi};
 
 fn bench_normal(bencher: &mut Bencher) {
-    let abi = Arc::new(NullAbi::new());
+    let abi = Arc::new(NullAbi::default());
     bencher.iter(|| {
         let foo = Foo::default();
         test_encode(&abi, foo);
@@ -12,7 +12,7 @@ fn bench_normal(bencher: &mut Bencher) {
 }
 
 fn bench_fast(bencher: &mut Bencher) {
-    let abi = Arc::new(NullAbi::new());
+    let abi = Arc::new(NullAbi::default());
     bencher.iter(|| {
         let bar = Bar { x: 3, y: 12 };
         test_encode_fast(&abi, bar);

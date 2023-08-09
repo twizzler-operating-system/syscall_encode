@@ -151,8 +151,11 @@ where
             let base_ptr = self.regs.ptr.with_addr(reg as usize);
             #[cfg(not(miri))]
             let base_ptr = core::ptr::from_exposed_addr::<u8>(reg as usize);
+            // Safety: self.by will never exceed the allocated stack space as long as
+            // this decoder was acquired via the ABI.
             let item_ptr = unsafe { base_ptr.add(self.by) };
             self.by += 1;
+            // Safety: u8 has no additional ABI requirements.
             Ok(unsafe { *item_ptr })
         }
     }
@@ -166,6 +169,7 @@ pub struct RegisterAndStackData<RegisterType: Copy + Default, const NR_REGS: usi
     pub ptr: *const u8,
 }
 
+// Safety: we never actually read the pointer or deref it
 #[cfg(miri)]
 unsafe impl<RegisterType: Copy + Default, const NR_REGS: usize> Send
     for RegisterAndStackData<RegisterType, NR_REGS>

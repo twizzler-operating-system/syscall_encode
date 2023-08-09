@@ -21,9 +21,6 @@
 //! struct Bar<'a> { x: &'a u32 }
 //! ```
 
-// TODO:
-// 3. document
-
 #![allow(soft_unstable)]
 #![feature(test)]
 extern crate test;
@@ -69,8 +66,8 @@ pub mod tests {
         ret_receiver: Receiver<EncodedType>,
     }
 
-    impl NullAbi {
-        pub fn new() -> Self {
+    impl Default for NullAbi {
+        fn default() -> Self {
             let (args, argr) = std::sync::mpsc::channel();
             let (rets, retr) = std::sync::mpsc::channel();
 
@@ -318,11 +315,12 @@ pub mod tests {
     pub struct Baz {
         a: bool,
     }
-    impl Into<EncodedType> for Bar {
-        fn into(self) -> EncodedType {
-            EncodedType {
-                regs: [self.x.into(), self.y.into(), 0, 0, 0, 0],
-                ..Default::default()
+    impl From<Bar> for EncodedType {
+        fn from(value: Bar) -> Self {
+            Self {
+                regs: [value.x.into(), value.y.into(), 0, 0, 0, 0],
+                #[cfg(miri)]
+                ptr: Default::default(),
             }
         }
     }
@@ -342,11 +340,13 @@ pub mod tests {
             }
         }
     }
-    impl Into<EncodedType> for Baz {
-        fn into(self) -> EncodedType {
-            EncodedType {
-                regs: [self.a.into(), 0, 0, 0, 0, 0],
-                ..Default::default()
+
+    impl From<Baz> for EncodedType {
+        fn from(value: Baz) -> Self {
+            Self {
+                regs: [value.a.into(), 0, 0, 0, 0, 0],
+                #[cfg(miri)]
+                ptr: Default::default(),
             }
         }
     }
@@ -359,7 +359,7 @@ pub mod tests {
 
     #[test]
     fn full() {
-        let abi = Arc::new(NullAbi::new());
+        let abi = Arc::new(NullAbi::default());
         let abi2 = abi.clone();
 
         let thr = std::thread::spawn(move || {
@@ -378,7 +378,7 @@ pub mod tests {
 
     #[test]
     fn encoding() {
-        let abi = Arc::new(NullAbi::new());
+        let abi = Arc::new(NullAbi::default());
 
         for _ in 0..100 {
             let foo = Foo::new_random();
@@ -388,7 +388,7 @@ pub mod tests {
 
     #[test]
     fn test_fast() {
-        let abi = Arc::new(NullAbi::new());
+        let abi = Arc::new(NullAbi::default());
 
         let abi2 = abi.clone();
 

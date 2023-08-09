@@ -35,6 +35,7 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
                 .map_err(|e| SyscallError::<Self::ErrorType>::from(e))?;
             let args = encoder.finish();
 
+            // Safety: NUM and args go together by definition.
             let result = unsafe { abi.syscall_impl(Self::NUM, args) };
 
             let mut decoder = abi.ret_decoder(result);
@@ -47,6 +48,9 @@ pub trait SyscallApi<'a, Abi: SyscallAbi + 'a>:
     }
 
     /// Used by the table API. You probably don't want to call this directly.
+    ///
+    /// # Safety
+    /// Caller must ensure that num and args were received by a syscall together.
     unsafe fn with<
         F: FnOnce(Abi::SyscallNumType, Self) -> Result<Self::ReturnType, Self::ErrorType>,
     >(
@@ -90,6 +94,7 @@ pub trait SyscallFastApi<'a, Abi: SyscallAbi + 'a>:
 
     fn perform_call(self, abi: &'a Abi) -> Self::ReturnType {
         let args: Abi::SyscallArgType = self.into();
+        // Safety: NUM and args go together by definition.
         let ret = unsafe { abi.syscall_impl(Self::NUM, args) };
         ret.into()
     }
