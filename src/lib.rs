@@ -404,6 +404,7 @@ pub mod tests {
         }
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn test_user_pointer() {
         let abi = Arc::new(NullAbi::default());
@@ -422,6 +423,7 @@ pub mod tests {
         });
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn test_user_slice() {
         let abi = Arc::new(NullAbi::default());
