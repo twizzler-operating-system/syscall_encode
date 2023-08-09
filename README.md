@@ -33,6 +33,10 @@ use the type system of a competent language to constrain the behavior and use of
 
 For example, a common pattern in Rust is to ensure that your code is correct by construction. In this case, by limiting how a struct can even be created, you limit your API consumers' ability to do the Wrong Thing. If we have a syscall, Foo, which can only be created as a result of calling syscall Bar, we have just ensured that (without unsafe) the user cannot issue a call to Foo without first calling Bar. Now, of course the kernel needs to be a little more careful than just blindly assuming that. But it helps userspace code avoid some classes of bugs.
 
+# Is it safe?
+
+Well. It passes Miri with strict provenance. At least, in the test harness, which doesn't make actual syscalls. It does use unsafe, but each occurrence is documented. It's for syscalls, you gotta expect a little unsafe.
+
 # How fast is it?
 
 We provide two ways of defining a syscall. One is using the "normal" API (implementing the SyscallApi trait), which can be applied to any type that has derived the SyscallEncodable trait (which can be derived). The other is the "fast" API, which requires the type to implement a number of Into and From methods for it to be usable as a syscall (implementing the SyscallFastApi trait).
