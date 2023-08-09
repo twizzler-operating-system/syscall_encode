@@ -32,3 +32,28 @@ There are two advantages to defining syscalls in terms of _types_ instead of _fu
 use the type system of a competent language to constrain the behavior and use of a syscall type, and [that happens to be the other reason also](https://youtube.com/clip/UgkxPApxAt_SzXN5PcQSy8E271kn3sxtnSBx). 
 
 For example, a common pattern in Rust is to ensure that your code is correct by construction. In this case, by limiting how a struct can even be created, you limit your API consumers' ability to do the Wrong Thing. If we have a syscall, Foo, which can only be created as a result of calling syscall Bar, we have just ensured that (without unsafe) the user cannot issue a call to Foo without first calling Bar. Now, of course the kernel needs to be a little more careful than just blindly assuming that. But it helps userspace code avoid some classes of bugs.
+
+# How fast is it?
+
+We provide two ways of defining a syscall. One is using the "normal" API (implementing the SyscallApi trait), which can be applied to any type that has derived the SyscallEncodable trait (which can be derived). The other is the "fast" API, which requires the type to implement a number of Into and From methods for it to be usable as a syscall (implementing the SyscallFastApi trait).
+
+Use the SyscallFastApi trait if the syscall in question is performance-critical and can easily fit within the registers as defined by the ABI. Use SyscallApi otherwise (it's more ergonomic and easier to implement, but not as fast).
+
+## Bench!
+On my Mac M2:
+```
+     Running benches/encode.rs (target/release/deps/encode-913d3832e9f8a495)
+encode_normal           time:   [175.53 ns 176.04 ns 176.59 ns]
+                        change: [+0.2809% +0.6424% +1.0522%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+encode_fast             time:   [2.3385 ns 2.3446 ns 2.3514 ns]
+                        change: [+0.6778% +1.0142% +1.3560%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+```
