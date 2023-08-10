@@ -50,8 +50,10 @@ dependencies = [
 name = "syscall_encode_macros"
 version = "0.1.1"
 dependencies = [
+ "compiler_builtins",
  "proc-macro2",
  "quote",
+ "rustc-std-workspace-core",
  "syn",
  "syscall_encode_traits",
 ]

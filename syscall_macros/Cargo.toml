@@ -22,4 +22,17 @@ proc-macro2 = "1.0"
 syscall_encode_traits = { path = "../syscall_macros_traits", version = "0.1" }
 
 [features]
-rustc-dep-of-std = ["syscall_encode_traits/rustc-dep-of-std"]
+rustc-dep-of-std = [
+    "syscall_encode_traits/rustc-dep-of-std",
+    "core",
+    "compiler_builtins",
+]
+
+[dependencies.compiler_builtins]
+optional = true
+version = "0.1"
+
+[dependencies.core]
+optional = true
+package = "rustc-std-workspace-core"
+version = "1.0.0"
