@@ -28,6 +28,7 @@ extern crate test;
 pub use syscall_encode_macros::SyscallEncodable;
 pub use syscall_encode_traits::*;
 
+#[cfg(any(test, feature = "benchmarking"))]
 pub mod tests {
     use std::{
         fmt::Debug,

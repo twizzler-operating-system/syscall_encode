@@ -1,7 +1,7 @@
 [package]
 name = "syscall_encode"
 description = "Traits and macros to help define a syscall interface for a kernel."
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"
 homepage = "https://github.com/twizzler-operating-system/syscall_encode/"
@@ -15,7 +15,7 @@ keywords = ["syscall", "abi"]
 [dependencies]
 syscall_encode_macros = { path = "syscall_macros", version = "0.1" }
 syscall_encode_traits = { path = "syscall_macros_traits", version = "0.1" }
-alloca = "0.3"
+alloca = { version = "0.3", optional = true }
 
 [dev-dependencies]
 alloca = "0.3"
@@ -28,3 +28,6 @@ debug = true
 [[bench]]
 name = "encode"
 harness = false
+
+[features]
+benchmarking = ["alloca"]

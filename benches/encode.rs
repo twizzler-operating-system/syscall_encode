@@ -1,3 +1,5 @@
+#![cfg(feature = "benchmarking")]
+
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
