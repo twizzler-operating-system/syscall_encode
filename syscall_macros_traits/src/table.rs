@@ -4,7 +4,7 @@ use crate::abi::SyscallAbi;
 /// acts as the match statement for that table, and so takes in the syscall number and args for the syscall
 /// we are handling. For example:
 ///
-/// ```{rust}
+/// ```no_compile
 /// struct Foo {...};
 /// impl SyscallApi<...> for Foo {
 ///     ...

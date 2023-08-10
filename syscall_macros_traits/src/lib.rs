@@ -1,6 +1,9 @@
 #![feature(strict_provenance)]
 #![no_std]
 
+#[doc(hidden)]
+pub extern crate core;
+
 pub mod abi;
 pub mod api;
 pub mod encoder;

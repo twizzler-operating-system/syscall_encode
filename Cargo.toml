@@ -31,3 +31,13 @@ harness = false
 
 [features]
 benchmarking = ["alloca"]
+rustc-dep-of-std = ["core", "compiler_builtins"]
+
+[dependencies.compiler_builtins]
+optional = true
+version = "0.1"
+
+[dependencies.core]
+optional = true
+package = "rustc-std-workspace-core"
+version = "1.0.0"
