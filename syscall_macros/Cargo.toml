@@ -1,6 +1,6 @@
 [package]
 name = "syscall_encode_macros"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Proc macros for the syscall_encode trait."
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"
@@ -19,20 +19,7 @@ proc-macro = true
 quote = "1.0"
 syn = { version = "2.0", features = ["extra-traits", "parsing"] }
 proc-macro2 = "1.0"
-syscall_encode_traits = { path = "../syscall_macros_traits", version = "0.1" }
+syscall_encode_traits = { path = "../syscall_macros_traits", version = "0.1.3" }
 
 [features]
-rustc-dep-of-std = [
-    "syscall_encode_traits/rustc-dep-of-std",
-    "core",
-    "compiler_builtins",
-]
-
-[dependencies.compiler_builtins]
-optional = true
-version = "0.1"
-
-[dependencies.core]
-optional = true
-package = "rustc-std-workspace-core"
-version = "1.0.0"
+rustc-dep-of-std = ["syscall_encode_traits/rustc-dep-of-std"]
