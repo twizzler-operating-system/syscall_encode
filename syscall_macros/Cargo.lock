@@ -3,15 +3,6 @@
 version = 3
 
 [[package]]
-name = "compiler_builtins"
-version = "0.1.100"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6c0f24437059853f0fa64afc51f338f93647a3de4cf3358ba1bb4171a199775"
-dependencies = [
- "rustc-std-workspace-core",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -30,12 +21,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustc-std-workspace-core"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1956f5517128a2b6f23ab2dadf1a976f4f5b27962e7724c2bf3d45e539ec098c"
-
-[[package]]
 name = "syn"
 version = "2.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -48,20 +33,11 @@ dependencies = [
 
 [[package]]
 name = "syscall_encode_macros"
-version = "0.1.3"
+version = "0.1.7"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "syscall_encode_traits",
-]
-
-[[package]]
-name = "syscall_encode_traits"
-version = "0.1.3"
-dependencies = [
- "compiler_builtins",
- "rustc-std-workspace-core",
 ]
 
 [[package]]
