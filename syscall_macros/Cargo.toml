@@ -1,6 +1,6 @@
 [package]
 name = "syscall_encode_macros"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Proc macros for the syscall_encode trait."
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"
