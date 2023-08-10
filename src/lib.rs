@@ -22,7 +22,10 @@
 //! ```
 
 #![allow(soft_unstable)]
-#![feature(test)]
+#![cfg_attr(any(test, feature = "benchmarking"), feature(test))]
+#![cfg_attr(not(any(test, feature = "benchmarking")), no_std)]
+
+#[cfg(any(test, feature = "benchmarking"))]
 extern crate test;
 
 pub use syscall_encode_macros::SyscallEncodable;
