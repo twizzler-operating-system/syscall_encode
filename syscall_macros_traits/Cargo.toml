@@ -1,6 +1,6 @@
 [package]
 name = "syscall_encode_traits"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Traits and macros to help define a syscall interface for a kernel."
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"

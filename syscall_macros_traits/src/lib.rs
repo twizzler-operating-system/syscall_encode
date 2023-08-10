@@ -2,7 +2,7 @@
 #![no_std]
 
 #[doc(hidden)]
-pub extern crate core;
+pub extern crate core as _core;
 
 pub mod abi;
 pub mod api;
