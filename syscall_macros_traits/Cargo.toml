@@ -1,6 +1,6 @@
 [package]
 name = "syscall_encode_traits"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Traits and macros to help define a syscall interface for a kernel."
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"
@@ -16,7 +16,11 @@ path = "src/lib.rs"
 alloca = "0.3"
 
 [features]
-rustc-dep-of-std = ["core", "compiler_builtins"]
+rustc-dep-of-std = [
+    "core",
+    "compiler_builtins",
+    "compiler_builtins/rustc-dep-of-std",
+]
 
 [dependencies.compiler_builtins]
 optional = true

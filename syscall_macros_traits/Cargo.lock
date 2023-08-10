@@ -25,6 +25,9 @@ name = "compiler_builtins"
 version = "0.1.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6c0f24437059853f0fa64afc51f338f93647a3de4cf3358ba1bb4171a199775"
+dependencies = [
+ "rustc-std-workspace-core",
+]
 
 [[package]]
 name = "libc"
@@ -40,7 +43,7 @@ checksum = "1956f5517128a2b6f23ab2dadf1a976f4f5b27962e7724c2bf3d45e539ec098c"
 
 [[package]]
 name = "syscall_encode_traits"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloca",
  "compiler_builtins",
