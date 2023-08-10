@@ -40,7 +40,7 @@ checksum = "1956f5517128a2b6f23ab2dadf1a976f4f5b27962e7724c2bf3d45e539ec098c"
 
 [[package]]
 name = "syscall_encode_traits"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "alloca",
  "compiler_builtins",
