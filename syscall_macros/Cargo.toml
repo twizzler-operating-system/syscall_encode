@@ -1,6 +1,6 @@
 [package]
 name = "syscall_encode_macros"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Proc macros for the syscall_encode trait."
 repository = "https://github.com/twizzler-operating-system/syscall_encode/"
@@ -9,8 +9,6 @@ license = "BSD-3-Clause"
 authors = ["Daniel Bittman <danielbittman1@gmail.com>"]
 
 [lib]
-name = "syscall_encode_macros"
-path = "src/lib.rs"
 proc-macro = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
