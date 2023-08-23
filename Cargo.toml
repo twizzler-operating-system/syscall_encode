@@ -21,7 +21,7 @@ crate-type = ["lib"]    # The crate types to generate.
 
 [dependencies]
 syscall_encode_macros = { path = "syscall_macros", version = "0.1.8" }
-syscall_encode_traits = { path = "syscall_macros_traits", version = "0.1.8" }
+syscall_encode_traits = { path = "syscall_macros_traits", version = "0.1.9" }
 alloca = { version = "0.3", optional = true }
 
 [dev-dependencies]
