@@ -7,7 +7,6 @@ repository = "https://github.com/twizzler-operating-system/syscall_encode/"
 homepage = "https://github.com/twizzler-operating-system/syscall_encode/"
 license = "BSD-3-Clause"
 authors = ["Daniel Bittman <danielbittman1@gmail.com>"]
-
 [lib]
 proc-macro = true
 
